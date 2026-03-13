@@ -8,7 +8,7 @@ const transactionSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['in', 'out'],
+    enum: ['in', 'out', 'stocktake_profit', 'stocktake_loss'],
     required: true,
   },
   product: {
@@ -24,7 +24,7 @@ const transactionSchema = new mongoose.Schema({
   quantity: {
     type: Number,
     required: true,
-    min: 1,
+    min: 0,
   },
   price: {
     type: Number,
@@ -49,6 +49,20 @@ const transactionSchema = new mongoose.Schema({
     ref: 'User',
     required: true,
   },
+  createdBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+  },
+  referenceNo: {
+    type: String,
+    default: '',
+  },
+  unitPrice: {
+    type: Number,
+    min: 0,
+    default: 0,
+  },
   remark: {
     type: String,
     default: '',
@@ -68,6 +82,17 @@ const transactionSchema = new mongoose.Schema({
   expiryDate: {
     type: Date,
   },
+  auditBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+  },
+  auditTime: {
+    type: Date,
+  },
+  auditRemark: {
+    type: String,
+    default: '',
+  },
 }, {
   timestamps: true,
 });
@@ -75,15 +100,24 @@ const transactionSchema = new mongoose.Schema({
 // 自动生成交易单号
 transactionSchema.pre('save', function(next) {
   if (this.isNew) {
-    const prefix = this.type === 'in' ? 'IN' : 'OUT';
+    let prefix = 'OUT';
+    if (this.type === 'in') prefix = 'IN';
+    if (this.type === 'stocktake_profit') prefix = 'PROFIT';
+    if (this.type === 'stocktake_loss') prefix = 'LOSS';
+    
     const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const random = Math.random().toString(36).substr(2, 6).toUpperCase();
     this.transactionNo = `${prefix}${date}${random}`;
   }
   
   // 自动计算总金额
-  if (this.quantity && this.price) {
-    this.totalAmount = this.quantity * this.price;
+  if (this.quantity && (this.price || this.unitPrice)) {
+    this.totalAmount = this.quantity * (this.price || this.unitPrice);
+  }
+  
+  // 如果没有operator，使用createdBy
+  if (!this.operator && this.createdBy) {
+    this.operator = this.createdBy;
   }
   
   next();

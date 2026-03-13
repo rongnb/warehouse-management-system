@@ -32,6 +32,8 @@ app.use('/api/categories', require('./routes/categories'));
 app.use('/api/suppliers', require('./routes/suppliers'));
 app.use('/api/warehouses', require('./routes/warehouses'));
 app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/stocktake', require('./routes/stocktake'));
+app.use('/api/system', require('./routes/system'));
 
 // 错误处理中间件
 app.use((err, req, res, next) => {

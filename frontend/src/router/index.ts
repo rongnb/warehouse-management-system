@@ -67,6 +67,12 @@ const routes: RouteRecordRaw[] = [
         meta: { title: '用户管理', icon: 'user' },
       },
       {
+        path: 'stocktake',
+        name: 'Stocktake',
+        component: () => import('@/views/Stocktake.vue'),
+        meta: { title: '库存盘点', icon: 's-check' },
+      },
+      {
         path: 'profile',
         name: 'Profile',
         component: () => import('@/views/Profile.vue'),

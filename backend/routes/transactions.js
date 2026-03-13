@@ -95,7 +95,7 @@ router.get('/:id', auth, async (req, res) => {
 });
 
 // 入库
-router.post('/in', auth, requireRole(['admin', 'manager', 'staff']), async (req, res) => {
+router.post('/in', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_keeper']), async (req, res) => {
   const session = await Transaction.startSession();
   session.startTransaction();
 
@@ -126,14 +126,16 @@ router.post('/in', auth, requireRole(['admin', 'manager', 'staff']), async (req,
       supplier,
       remark,
       operator: req.user._id,
+      createdBy: req.user._id,
       batchNumber,
       productionDate,
       expiryDate,
+      status: 'completed', // 入库无需审核，仓管员直接处理完成
     });
 
     await transaction.save({ session });
 
-    // 更新库存
+    // 直接更新库存
     const inventory = await Inventory.findOne({ product, warehouse }).session(session);
     
     if (inventory) {
@@ -170,7 +172,7 @@ router.post('/in', auth, requireRole(['admin', 'manager', 'staff']), async (req,
 });
 
 // 出库
-router.post('/out', auth, requireRole(['admin', 'manager', 'staff']), async (req, res) => {
+router.post('/out', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_keeper']), async (req, res) => {
   const session = await Transaction.startSession();
   session.startTransaction();
 
@@ -181,7 +183,7 @@ router.post('/out', auth, requireRole(['admin', 'manager', 'staff']), async (req
       quantity, 
       price, 
       customer, 
-      remark 
+      remark
     } = req.body;
 
     if (!product || !warehouse || !quantity || quantity <= 0) {
@@ -206,11 +208,13 @@ router.post('/out', auth, requireRole(['admin', 'manager', 'staff']), async (req
       customer,
       remark,
       operator: req.user._id,
+      createdBy: req.user._id,
+      status: 'completed', // 出库无需审核，仓管员直接处理完成
     });
 
     await transaction.save({ session });
 
-    // 更新库存
+    // 直接更新库存
     inventory.quantity -= quantity;
     inventory.updatedBy = req.user._id;
     inventory.lastUpdated = new Date();
@@ -293,6 +297,8 @@ router.put('/:id/cancel', auth, requireRole(['admin', 'manager']), async (req, r
     session.endSession();
   }
 });
+
+
 
 // 获取最近交易记录
 router.get('/recent/list', auth, async (req, res) => {
