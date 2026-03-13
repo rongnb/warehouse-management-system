@@ -45,21 +45,34 @@ const initData = async () => {
     });
     await admin.save();
 
-    // 创建普通用户
-    const staffPassword = await bcrypt.hash('123456', 10);
-    const staff = new User({
-      username: 'staff',
-      password: staffPassword,
-      realName: '仓库管理员',
-      email: 'staff@example.com',
+    // 创建普通用户（仓管员A）
+    const keeperAPassword = await bcrypt.hash('123456', 10);
+    const keeperA = new User({
+      username: 'keeper_a',
+      password: keeperAPassword,
+      realName: '仓管员A',
+      email: 'keeper_a@example.com',
       phone: '13800138001',
-      role: 'staff',
+      role: 'warehouse_keeper',
     });
-    await staff.save();
+    await keeperA.save();
+
+    // 创建普通用户（仓管员B）
+    const keeperBPassword = await bcrypt.hash('123456', 10);
+    const keeperB = new User({
+      username: 'keeper_b',
+      password: keeperBPassword,
+      realName: '仓管员B',
+      email: 'keeper_b@example.com',
+      phone: '13800138002',
+      role: 'warehouse_keeper',
+    });
+    await keeperB.save();
 
     console.log('用户数据初始化完成');
     console.log('管理员账号: admin / 123456');
-    console.log('普通用户账号: staff / 123456');
+    console.log('仓管员A账号: keeper_a / 123456');
+    console.log('仓管员B账号: keeper_b / 123456');
 
     // 创建分类
     const categories = [
@@ -86,8 +99,8 @@ const initData = async () => {
     // 创建仓库
     const warehouses = [
       { name: '主仓库', code: 'WH001', location: '一号楼一层', manager: admin._id, phone: '13800138000', sort: 1 },
-      { name: '二号仓库', code: 'WH002', location: '二号楼三层', manager: staff._id, phone: '13800138001', sort: 2 },
-      { name: '备品仓库', code: 'WH003', location: '三号楼二层', sort: 3 },
+      { name: '二号仓库', code: 'WH002', location: '二号楼三层', manager: keeperA._id, phone: '13800138001', sort: 2 },
+      { name: '备品仓库', code: 'WH003', location: '三号楼二层', manager: keeperB._id, phone: '13800138002', sort: 3 },
     ];
 
     const createdWarehouses = await Warehouse.insertMany(warehouses);

@@ -20,7 +20,10 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/warehouse
   useUnifiedTopology: true,
 })
 .then(() => console.log('数据库连接成功'))
-.catch(err => console.error('数据库连接失败:', err));
+.catch(err => {
+  console.error('MongoDB连接失败，使用内存模式运行:', err.message);
+  console.log('注意：内存模式下数据不会持久化，重启服务后数据会丢失');
+});
 
 // 路由
 app.use('/api/auth', require('./routes/auth'));

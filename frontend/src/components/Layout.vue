@@ -19,43 +19,10 @@
         router
         unique-opened
       >
-        <el-menu-item index="/dashboard">
-          <el-icon><DataBoard /></el-icon>
-          <template #title>首页</template>
+        <el-menu-item index="/stocktake">
+          <el-icon><Goods /></el-icon>
+          <template #title>库存盘点</template>
         </el-menu-item>
-        
-        <el-sub-menu index="1">
-          <template #title>
-            <el-icon><Goods /></el-icon>
-            <span>商品管理</span>
-          </template>
-          <el-menu-item index="/products">商品信息</el-menu-item>
-          <el-menu-item index="/categories">分类管理</el-menu-item>
-        </el-sub-menu>
-        
-        <el-sub-menu index="2">
-          <template #title>
-            <el-icon><Location /></el-icon>
-            <span>库存管理</span>
-          </template>
-          <el-menu-item index="/inventory">库存查询</el-menu-item>
-          <el-menu-item index="/transactions">出入库记录</el-menu-item>
-          <el-menu-item index="/warehouses">仓库信息</el-menu-item>
-        </el-sub-menu>
-        
-        <el-menu-item index="/suppliers">
-          <el-icon><Company /></el-icon>
-          <template #title>供应商管理</template>
-        </el-menu-item>
-        
-        <el-sub-menu index="3">
-          <template #title>
-            <el-icon><User /></el-icon>
-            <span>系统管理</span>
-          </template>
-          <el-menu-item index="/users">用户管理</el-menu-item>
-          <el-menu-item index="/profile">个人中心</el-menu-item>
-        </el-sub-menu>
       </el-menu>
     </el-aside>
 
@@ -70,18 +37,11 @@
           </el-icon>
           
           <el-breadcrumb class="breadcrumb" separator="/">
-            <el-breadcrumb-item :to="{ path: '/dashboard' }">首页</el-breadcrumb-item>
             <el-breadcrumb-item v-if="route.meta.title">{{ route.meta.title }}</el-breadcrumb-item>
           </el-breadcrumb>
         </div>
         
         <div class="header-right">
-          <el-badge :value="5" class="notification-badge">
-            <el-button type="text" @click="showNotification">
-              <el-icon><Bell /></el-icon>
-            </el-button>
-          </el-badge>
-          
           <el-dropdown @command="handleDropdownCommand">
             <span class="user-info">
               <el-avatar :size="32" class="user-avatar">
@@ -93,15 +53,7 @@
             
             <template #dropdown>
               <el-dropdown-menu>
-                <el-dropdown-item command="profile">
-                  <el-icon><User /></el-icon>
-                  个人中心
-                </el-dropdown-item>
-                <el-dropdown-item command="settings">
-                  <el-icon><Setting /></el-icon>
-                  系统设置
-                </el-dropdown-item>
-                <el-dropdown-item divided command="logout">
+                <el-dropdown-item command="logout">
                   <el-icon><SwitchButton /></el-icon>
                   退出登录
                 </el-dropdown-item>
@@ -134,16 +86,10 @@ import { useRoute, useRouter } from 'vue-router';
 import { useGlobalStore } from '@/stores';
 import { 
   Box, 
-  DataBoard, 
   Goods, 
-  Location, 
-  Company, 
-  User, 
   Fold, 
   Expand, 
-  Bell, 
   ArrowDown, 
-  Setting, 
   SwitchButton 
 } from '@element-plus/icons-vue';
 
@@ -169,18 +115,10 @@ const toggleSidebar = () => {
   sidebarOpen.value = !sidebarOpen.value;
 };
 
-const showNotification = () => {
-  store.$message.info('暂无新消息');
-};
+
 
 const handleDropdownCommand = (command: string) => {
   switch (command) {
-    case 'profile':
-      router.push('/profile');
-      break;
-    case 'settings':
-      router.push('/settings');
-      break;
     case 'logout':
       handleLogout();
       break;
