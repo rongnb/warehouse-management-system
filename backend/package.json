@@ -1,6 +1,6 @@
 {
   "name": "warehouse-backend",
-  "version": "1.0.0",
+  "version": "0.0.2",
   "description": "仓库管理系统后端",
   "main": "server.js",
   "scripts": {
