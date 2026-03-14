@@ -103,6 +103,11 @@ router.post('/', auth, requireRole(['admin', 'manager']), async (req, res) => {
       return res.status(400).json({ message: '供应商编码已存在' });
     }
 
+    // 手机号格式校验
+    if (phone && !/^1[3-9]\d{9}$/.test(phone)) {
+      return res.status(400).json({ message: '手机号格式不正确' });
+    }
+
     const supplier = new Supplier({
       name,
       code,
@@ -142,6 +147,11 @@ router.put('/:id', auth, requireRole(['admin', 'manager']), async (req, res) => 
       if (existingSupplier) {
         return res.status(400).json({ message: '供应商编码已存在' });
       }
+    }
+
+    // 手机号格式校验
+    if (phone !== undefined && !/^1[3-9]\d{9}$/.test(phone)) {
+      return res.status(400).json({ message: '手机号格式不正确' });
     }
 
     if (name !== undefined) supplier.name = name;

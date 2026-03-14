@@ -6,19 +6,24 @@
   "scripts": {
     "dev": "nodemon server.js",
     "start": "node server.js",
-    "init-db": "node ../database/init.js"
+    "init-db": "node ../database/init.js",
+    "test": "jest --config ../jest.config.js",
+    "test:unit": "jest ../test/unit --config ../jest.config.js",
+    "test:integration": "jest ../test/integration --config ../jest.config.js",
+    "test:coverage": "jest --coverage --config ../jest.config.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "mongoose": "^7.5.0",
-    "cors": "^2.8.5",
-    "jsonwebtoken": "^9.0.2",
     "bcryptjs": "^2.4.3",
-    "multer": "^1.4.5-lts.1",
+    "cors": "^2.8.5",
+    "dayjs": "^1.11.9",
     "dotenv": "^16.3.1",
-    "dayjs": "^1.11.9"
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "mongoose": "^7.5.0",
+    "multer": "^1.4.5-lts.1"
   },
   "devDependencies": {
+    "mongodb-memory-server": "^11.0.1",
     "nodemon": "^3.0.1"
   }
 }

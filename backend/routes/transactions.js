@@ -130,37 +130,16 @@ router.post('/in', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_ke
       batchNumber,
       productionDate,
       expiryDate,
-      status: 'completed', // 入库无需审核，仓管员直接处理完成
+      status: 'pending', // 入库需要审核
     });
 
     await transaction.save({ session });
-
-    // 直接更新库存
-    const inventory = await Inventory.findOne({ product, warehouse }).session(session);
-    
-    if (inventory) {
-      inventory.quantity += quantity;
-      inventory.updatedBy = req.user._id;
-      inventory.lastUpdated = new Date();
-      await inventory.save({ session });
-    } else {
-      const newInventory = new Inventory({
-        product,
-        warehouse,
-        quantity,
-        updatedBy: req.user._id,
-        batchNumber,
-        productionDate,
-        expiryDate,
-      });
-      await newInventory.save({ session });
-    }
 
     await session.commitTransaction();
     await transaction.populate('product warehouse supplier', 'name sku unit');
 
     res.status(201).json({
-      message: '入库成功',
+      message: '入库单创建成功，等待审核',
       transaction,
     });
   } catch (error) {
@@ -235,6 +214,98 @@ router.post('/out', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_k
   }
 });
 
+// 审核入库单
+router.put('/:id/audit', auth, requireRole(['admin', 'manager']), async (req, res) => {
+  const session = await Transaction.startSession();
+  session.startTransaction();
+
+  try {
+    const { id } = req.params;
+    const { status, remark } = req.body;
+
+    if (!['completed', 'cancelled'].includes(status)) {
+      await session.abortTransaction();
+      return res.status(400).json({ message: '无效的审核状态' });
+    }
+
+    const transaction = await Transaction.findById(id).session(session);
+    
+    if (!transaction) {
+      await session.abortTransaction();
+      return res.status(404).json({ message: '交易记录不存在' });
+    }
+
+    if (transaction.type !== 'in') {
+      await session.abortTransaction();
+      return res.status(400).json({ message: '只能审核入库单' });
+    }
+
+    if (transaction.status !== 'pending') {
+      await session.abortTransaction();
+      return res.status(400).json({ message: '该入库单已审核或已取消，无法重复审核' });
+    }
+
+    if (status === 'completed') {
+      // 审核通过，更新库存
+      const inventory = await Inventory.findOne({ 
+        product: transaction.product, 
+        warehouse: transaction.warehouse 
+      }).session(session);
+      
+      if (inventory) {
+        inventory.quantity += transaction.quantity;
+        inventory.updatedBy = req.user._id;
+        inventory.lastUpdated = new Date();
+        await inventory.save({ session });
+      } else {
+        const newInventory = new Inventory({
+          product: transaction.product,
+          warehouse: transaction.warehouse,
+          quantity: transaction.quantity,
+          updatedBy: req.user._id,
+          batchNumber: transaction.batchNumber,
+          productionDate: transaction.productionDate,
+          expiryDate: transaction.expiryDate,
+        });
+        await newInventory.save({ session });
+      }
+
+      transaction.status = 'completed';
+      transaction.auditBy = req.user._id;
+      transaction.auditTime = new Date();
+      transaction.auditRemark = remark || '';
+      await transaction.save({ session });
+
+      await session.commitTransaction();
+      await transaction.populate('product warehouse supplier', 'name sku unit');
+
+      res.json({
+        message: '入库单审核通过，库存已更新',
+        transaction,
+      });
+    } else {
+      // 审核拒绝
+      transaction.status = 'cancelled';
+      transaction.auditBy = req.user._id;
+      transaction.auditTime = new Date();
+      transaction.auditRemark = remark || '';
+      await transaction.save({ session });
+
+      await session.commitTransaction();
+
+      res.json({
+        message: '入库单已拒绝',
+        transaction,
+      });
+    }
+  } catch (error) {
+    await session.abortTransaction();
+    res.status(500).json({ message: '审核入库单失败', error: error.message });
+  } finally {
+    session.endSession();
+  }
+});
+
 // 取消交易
 router.put('/:id/cancel', auth, requireRole(['admin', 'manager']), async (req, res) => {
   const session = await Transaction.startSession();
@@ -251,6 +322,12 @@ router.put('/:id/cancel', auth, requireRole(['admin', 'manager']), async (req, r
     if (transaction.status === 'cancelled') {
       await session.abortTransaction();
       return res.status(400).json({ message: '该交易已被取消' });
+    }
+
+    // 只有已完成的交易才能取消
+    if (transaction.status !== 'completed') {
+      await session.abortTransaction();
+      return res.status(400).json({ message: '只能取消已完成的交易' });
     }
 
     // 恢复库存
