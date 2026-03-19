@@ -2,13 +2,19 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const dotenv = require('dotenv');
+const path = require('path');
+const logger = require('./utils/logger');
 
-dotenv.config();
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// 中间件
+// 日志中间件
+app.use(logger.requestId);
+app.use(logger.httpMiddleware);
+
+// 基础中间件
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -19,10 +25,10 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/warehouse
   useNewUrlParser: true,
   useUnifiedTopology: true,
 })
-.then(() => console.log('数据库连接成功'))
+.then(() => logger.info('数据库连接成功'))
 .catch(err => {
-  console.error('MongoDB连接失败，使用内存模式运行:', err.message);
-  console.log('注意：内存模式下数据不会持久化，重启服务后数据会丢失');
+  logger.error('MongoDB连接失败，使用内存模式运行:', err.message);
+  logger.warn('注意：内存模式下数据不会持久化，重启服务后数据会丢失');
 });
 
 // 路由
@@ -37,18 +43,31 @@ app.use('/api/warehouses', require('./routes/warehouses'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/stocktake', require('./routes/stocktake'));
 app.use('/api/system', require('./routes/system'));
+app.use('/api/logs', require('./routes/logs'));
 
 // 错误处理中间件
 app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ message: '服务器内部错误' });
+  logger.error(err.stack, { requestId: req.requestId });
+  res.status(500).json({
+    message: '服务器内部错误',
+    requestId: req.requestId
+  });
 });
 
 // 404处理
 app.use((req, res) => {
-  res.status(404).json({ message: '接口不存在' });
+  logger.warn(`请求的资源不存在: ${req.originalUrl}`, {
+    requestId: req.requestId,
+    ip: req.ip,
+    userAgent: req.get('User-Agent')
+  });
+
+  res.status(404).json({
+    message: '接口不存在',
+    requestId: req.requestId
+  });
 });
 
 app.listen(PORT, () => {
-  console.log(`服务器运行在 http://localhost:${PORT}`);
+  logger.info(`服务器运行在 http://localhost:${PORT}`);
 });

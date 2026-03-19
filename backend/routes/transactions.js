@@ -1,46 +1,49 @@
 const express = require('express');
 const Transaction = require('../models/Transaction');
 const Inventory = require('../models/Inventory');
+const Product = require('../models/Product');
 const { auth, requireRole } = require('../middleware/auth');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
 // 获取出入库记录列表
 router.get('/', auth, async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 10, 
-      keyword, 
-      type, 
-      warehouse,
+    const {
+      page = 1,
+      limit = 10,
+      transactionNo,
+      productName,
+      type,
+      status,
       startDate,
       endDate
     } = req.query;
-    
+
     const query = {};
 
-    if (keyword) {
-      // 先查询商品
+    if (transactionNo) {
+      query.transactionNo = { $regex: transactionNo, $options: 'i' };
+    }
+
+    if (productName) {
       const products = await Product.find({
         $or: [
-          { name: { $regex: keyword, $options: 'i' } },
-          { sku: { $regex: keyword, $options: 'i' } },
+          { name: { $regex: productName, $options: 'i' } },
+          { sku: { $regex: productName, $options: 'i' } },
         ]
       }).select('_id');
-      
-      query.$or = [
-        { transactionNo: { $regex: keyword, $options: 'i' } },
-        { product: { $in: products.map(p => p._id) } },
-      ];
+
+      query.product = { $in: products.map(p => p._id) };
     }
 
     if (type) {
       query.type = type;
     }
 
-    if (warehouse) {
-      query.warehouse = warehouse;
+    if (status) {
+      query.status = status;
     }
 
     if (startDate && endDate) {
@@ -51,7 +54,7 @@ router.get('/', auth, async (req, res) => {
     }
 
     const transactions = await Transaction.find(query)
-      .populate('product', 'name sku unit')
+      .populate('product', 'name sku unit price')
       .populate('warehouse', 'name')
       .populate('supplier', 'name')
       .populate('operator', 'realName')
@@ -61,8 +64,27 @@ router.get('/', auth, async (req, res) => {
 
     const total = await Transaction.countDocuments(query);
 
+    const formattedTransactions = transactions.map(t => ({
+      id: t._id,
+      _id: t._id,
+      transactionNo: t.transactionNo,
+      productName: t.product?.name || '',
+      sku: t.product?.sku || '',
+      productId: t.product?._id,
+      type: t.type,
+      quantity: t.quantity,
+      unitPrice: t.price || 0,
+      totalAmount: (t.price || 0) * t.quantity,
+      warehouseName: t.warehouse?.name || '',
+      warehouseId: t.warehouse?._id,
+      status: t.status,
+      createdBy: t.operator?.realName || '',
+      createdAt: t.createdAt?.toLocaleString() || '',
+      remark: t.remark,
+    }));
+
     res.json({
-      transactions,
+      transactions: formattedTransactions,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -94,35 +116,42 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// 入库
-router.post('/in', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_keeper']), async (req, res) => {
+// 处理入库逻辑
+async function handleInbound(req, res) {
   const session = await Transaction.startSession();
   session.startTransaction();
 
   try {
-    const { 
-      product, 
-      warehouse, 
-      quantity, 
-      price, 
-      supplier, 
+    const {
+      productId,
+      warehouseId,
+      quantity,
+      unitPrice,
       remark,
+      product,
+      warehouse,
+      price,
+      supplier,
       batchNumber,
       productionDate,
       expiryDate
     } = req.body;
 
-    if (!product || !warehouse || !quantity || quantity <= 0) {
+    const finalProduct = productId || product;
+    const finalWarehouse = warehouseId || warehouse;
+    const finalPrice = unitPrice || price || 0;
+
+    if (!finalProduct || !finalWarehouse || !quantity || quantity <= 0) {
       return res.status(400).json({ message: '参数不完整或数量无效' });
     }
 
-    // 创建交易记录
     const transaction = new Transaction({
+      transactionNo: `TR${Date.now()}`,
       type: 'in',
-      product,
-      warehouse,
+      product: finalProduct,
+      warehouse: finalWarehouse,
       quantity,
-      price: price || 0,
+      price: finalPrice,
       supplier,
       remark,
       operator: req.user._id,
@@ -130,7 +159,7 @@ router.post('/in', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_ke
       batchNumber,
       productionDate,
       expiryDate,
-      status: 'pending', // 入库需要审核
+      status: 'pending',
     });
 
     await transaction.save({ session });
@@ -148,52 +177,65 @@ router.post('/in', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_ke
   } finally {
     session.endSession();
   }
+}
+
+router.post('/in', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_keeper']), async (req, res) => {
+  return handleInbound(req, res);
 });
 
-// 出库
-router.post('/out', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_keeper']), async (req, res) => {
+router.post('/inbound', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_keeper']), async (req, res) => {
+  return handleInbound(req, res);
+});
+
+// 处理出库逻辑
+async function handleOutbound(req, res) {
   const session = await Transaction.startSession();
   session.startTransaction();
 
   try {
-    const { 
-      product, 
-      warehouse, 
-      quantity, 
-      price, 
-      customer, 
-      remark
+    const {
+      productId,
+      warehouseId,
+      quantity,
+      unitPrice,
+      remark,
+      product,
+      warehouse,
+      price,
+      customer
     } = req.body;
 
-    if (!product || !warehouse || !quantity || quantity <= 0) {
+    const finalProduct = productId || product;
+    const finalWarehouse = warehouseId || warehouse;
+    const finalPrice = unitPrice || price || 0;
+
+    if (!finalProduct || !finalWarehouse || !quantity || quantity <= 0) {
       return res.status(400).json({ message: '参数不完整或数量无效' });
     }
 
-    // 检查库存是否足够
-    const inventory = await Inventory.findOne({ product, warehouse }).session(session);
-    
+    const inventory = await Inventory.findOne({ product: finalProduct, warehouse: finalWarehouse }).session(session);
+
     if (!inventory || inventory.quantity < quantity) {
       await session.abortTransaction();
       return res.status(400).json({ message: '库存不足' });
     }
 
-    // 创建交易记录
     const transaction = new Transaction({
+      transactionNo: `TR${Date.now()}`,
       type: 'out',
-      product,
-      warehouse,
+      product: finalProduct,
+      warehouse: finalWarehouse,
       quantity,
-      price: price || 0,
+      price: finalPrice,
       customer,
       remark,
       operator: req.user._id,
       createdBy: req.user._id,
-      status: 'completed', // 出库无需审核，仓管员直接处理完成
+      status: 'completed',
     });
 
     await transaction.save({ session });
 
-    // 直接更新库存
     inventory.quantity -= quantity;
     inventory.updatedBy = req.user._id;
     inventory.lastUpdated = new Date();
@@ -212,10 +254,18 @@ router.post('/out', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_k
   } finally {
     session.endSession();
   }
+}
+
+router.post('/out', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_keeper']), async (req, res) => {
+  return handleOutbound(req, res);
 });
 
-// 审核入库单
-router.put('/:id/audit', auth, requireRole(['admin', 'manager']), async (req, res) => {
+router.post('/outbound', auth, requireRole(['admin', 'manager', 'staff', 'warehouse_keeper']), async (req, res) => {
+  return handleOutbound(req, res);
+});
+
+// 处理审核逻辑
+async function handleAudit(req, res) {
   const session = await Transaction.startSession();
   session.startTransaction();
 
@@ -223,13 +273,20 @@ router.put('/:id/audit', auth, requireRole(['admin', 'manager']), async (req, re
     const { id } = req.params;
     const { status, remark } = req.body;
 
-    if (!['completed', 'cancelled'].includes(status)) {
+    let mappedStatus = status;
+    if (status === 'approved') {
+      mappedStatus = 'completed';
+    } else if (status === 'rejected') {
+      mappedStatus = 'cancelled';
+    }
+
+    if (!['completed', 'cancelled'].includes(mappedStatus)) {
       await session.abortTransaction();
       return res.status(400).json({ message: '无效的审核状态' });
     }
 
     const transaction = await Transaction.findById(id).session(session);
-    
+
     if (!transaction) {
       await session.abortTransaction();
       return res.status(404).json({ message: '交易记录不存在' });
@@ -245,13 +302,12 @@ router.put('/:id/audit', auth, requireRole(['admin', 'manager']), async (req, re
       return res.status(400).json({ message: '该入库单已审核或已取消，无法重复审核' });
     }
 
-    if (status === 'completed') {
-      // 审核通过，更新库存
-      const inventory = await Inventory.findOne({ 
-        product: transaction.product, 
-        warehouse: transaction.warehouse 
+    if (mappedStatus === 'completed') {
+      const inventory = await Inventory.findOne({
+        product: transaction.product,
+        warehouse: transaction.warehouse
       }).session(session);
-      
+
       if (inventory) {
         inventory.quantity += transaction.quantity;
         inventory.updatedBy = req.user._id;
@@ -284,7 +340,6 @@ router.put('/:id/audit', auth, requireRole(['admin', 'manager']), async (req, re
         transaction,
       });
     } else {
-      // 审核拒绝
       transaction.status = 'cancelled';
       transaction.auditBy = req.user._id;
       transaction.auditTime = new Date();
@@ -304,16 +359,24 @@ router.put('/:id/audit', auth, requireRole(['admin', 'manager']), async (req, re
   } finally {
     session.endSession();
   }
+}
+
+router.put('/:id/audit', auth, requireRole(['admin', 'manager']), async (req, res) => {
+  return handleAudit(req, res);
 });
 
-// 取消交易
-router.put('/:id/cancel', auth, requireRole(['admin', 'manager']), async (req, res) => {
+router.post('/:id/audit', auth, requireRole(['admin', 'manager']), async (req, res) => {
+  return handleAudit(req, res);
+});
+
+// 处理取消逻辑
+async function handleCancel(req, res) {
   const session = await Transaction.startSession();
   session.startTransaction();
 
   try {
     const transaction = await Transaction.findById(req.params.id).session(session);
-    
+
     if (!transaction) {
       await session.abortTransaction();
       return res.status(404).json({ message: '交易记录不存在' });
@@ -324,41 +387,34 @@ router.put('/:id/cancel', auth, requireRole(['admin', 'manager']), async (req, r
       return res.status(400).json({ message: '该交易已被取消' });
     }
 
-    // 只有已完成的交易才能取消
-    if (transaction.status !== 'completed') {
-      await session.abortTransaction();
-      return res.status(400).json({ message: '只能取消已完成的交易' });
-    }
+    if (transaction.status === 'completed') {
+      const inventory = await Inventory.findOne({
+        product: transaction.product,
+        warehouse: transaction.warehouse
+      }).session(session);
 
-    // 恢复库存
-    const inventory = await Inventory.findOne({ 
-      product: transaction.product, 
-      warehouse: transaction.warehouse 
-    }).session(session);
-
-    if (!inventory) {
-      await session.abortTransaction();
-      return res.status(400).json({ message: '库存记录不存在' });
-    }
-
-    if (transaction.type === 'in') {
-      // 入库取消，扣减库存
-      if (inventory.quantity < transaction.quantity) {
+      if (!inventory) {
         await session.abortTransaction();
-        return res.status(400).json({ message: '当前库存不足，无法取消入库' });
+        return res.status(400).json({ message: '库存记录不存在' });
       }
-      inventory.quantity -= transaction.quantity;
-    } else {
-      // 出库取消，增加库存
-      inventory.quantity += transaction.quantity;
+
+      if (transaction.type === 'in') {
+        if (inventory.quantity < transaction.quantity) {
+          await session.abortTransaction();
+          return res.status(400).json({ message: '当前库存不足，无法取消入库' });
+        }
+        inventory.quantity -= transaction.quantity;
+      } else {
+        inventory.quantity += transaction.quantity;
+      }
+
+      inventory.updatedBy = req.user._id;
+      inventory.lastUpdated = new Date();
+      await inventory.save({ session });
     }
 
-    inventory.updatedBy = req.user._id;
-    inventory.lastUpdated = new Date();
-    await inventory.save({ session });
-
-    // 更新交易状态
     transaction.status = 'cancelled';
+    transaction.remark = req.body.reason || transaction.remark;
     await transaction.save({ session });
 
     await session.commitTransaction();
@@ -373,22 +429,27 @@ router.put('/:id/cancel', auth, requireRole(['admin', 'manager']), async (req, r
   } finally {
     session.endSession();
   }
+}
+
+router.put('/:id/cancel', auth, requireRole(['admin', 'manager']), async (req, res) => {
+  return handleCancel(req, res);
 });
 
-
+router.post('/:id/cancel', auth, requireRole(['admin', 'manager']), async (req, res) => {
+  return handleCancel(req, res);
+});
 
 // 获取最近交易记录
 router.get('/recent/list', auth, async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 10;
-    
+
     const transactions = await Transaction.find()
       .populate('product', 'name sku')
       .populate('warehouse', 'name')
       .sort({ createdAt: -1 })
       .limit(limit);
 
-    // 格式化数据
     const formatted = transactions.map(t => ({
       id: t._id,
       transactionNo: t.transactionNo,

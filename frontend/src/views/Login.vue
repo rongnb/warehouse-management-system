@@ -64,6 +64,7 @@ import { ref, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { useGlobalStore } from '@/stores';
 import { Box, User, Lock } from '@element-plus/icons-vue';
+import { ElMessage } from 'element-plus';
 import type { FormInstance, FormRules } from 'element-plus';
 
 const router = useRouter();

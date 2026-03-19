@@ -31,6 +31,14 @@ const productSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  modelName: {
+    type: String,
+    default: '',
+  },
+  manufacturer: {
+    type: String,
+    default: '',
+  },
   unit: {
     type: String,
     required: true,
@@ -65,6 +73,10 @@ const productSchema = new mongoose.Schema({
     type: Number,
     default: 99999,
     min: 0,
+  },
+  remark: {
+    type: String,
+    default: '',
   },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,

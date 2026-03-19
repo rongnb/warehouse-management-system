@@ -2,6 +2,7 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { auth } = require('../middleware/auth');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
@@ -35,8 +36,8 @@ router.post('/login', async (req, res) => {
     // 生成token
     const token = jwt.sign(
       { userId: user._id, username: user.username, role: user.role },
-      process.env.JWT_SECRET,
-      { expiresIn: process.env.JWT_EXPIRES_IN }
+      process.env.JWT_SECRET || 'warehouse-management-system-jwt-secret-key-2024',
+      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
 
     res.json({
@@ -142,6 +143,11 @@ router.put('/change-password', auth, async (req, res) => {
   } catch (error) {
     res.status(500).json({ message: '密码修改失败', error: error.message });
   }
+});
+
+// 退出登录
+router.post('/logout', auth, async (req, res) => {
+  res.json({ message: '退出登录成功' });
 });
 
 module.exports = router;

@@ -11,7 +11,7 @@ const auth = async (req, res, next) => {
     }
 
     // 验证token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'warehouse-management-system-jwt-secret-key-2024');
     const user = await User.findById(decoded.userId).select('-password');
     
     if (!user) {

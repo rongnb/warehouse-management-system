@@ -1,0 +1,215 @@
+/* 移动端适配样式 */
+
+/* 响应式设计：移动端优化 */
+
+/* 超小屏幕 (小于360px) */
+@media (max-width: 360px) {
+  .el-dialog {
+    width: 95% !important;
+    margin: 2.5vh auto;
+  }
+
+  .el-form-item__label {
+    font-size: 12px;
+  }
+
+  .el-button {
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+}
+
+/* 小屏幕 (小于576px) */
+@media (max-width: 576px) {
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .page-header h2 {
+    font-size: 18px;
+  }
+
+  .search-card .el-form {
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .search-card .el-form-item {
+    margin-bottom: 0;
+    width: 100%;
+  }
+
+  .search-card .el-form-item .el-select,
+  .search-card .el-form-item .el-input {
+    width: 100%;
+  }
+
+  .table-card {
+    padding: 8px;
+  }
+
+  .table-card .el-table {
+    font-size: 12px;
+  }
+
+  .table-card .el-table th,
+  .table-card .el-table td {
+    padding: 8px 4px;
+  }
+
+  .el-dialog {
+    width: 90% !important;
+    margin: 5vh auto;
+  }
+
+  .el-dialog__body {
+    padding: 16px;
+  }
+
+  .el-form-item__label {
+    font-size: 14px;
+  }
+
+  .el-button {
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+
+  .pagination-container {
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
+  }
+
+  .layout-sidebar {
+    width: 64px !important;
+  }
+
+  .layout-header {
+    padding: 0 12px;
+  }
+
+  .layout-main {
+    padding: 12px;
+  }
+
+  /* 隐藏表格中不需要的列 */
+  .hide-on-mobile {
+    display: none;
+  }
+}
+
+/* 中等屏幕 (576px - 768px) */
+@media (min-width: 577px) and (max-width: 768px) {
+  .el-dialog {
+    width: 85% !important;
+    margin: 7.5vh auto;
+  }
+
+  .search-card .el-form {
+    flex-wrap: wrap;
+  }
+
+  .search-card .el-form-item {
+    width: 48%;
+  }
+
+  .layout-sidebar {
+    width: 180px !important;
+  }
+
+  .hide-on-mobile {
+    display: none;
+  }
+}
+
+/* 大屏幕 (768px - 992px) */
+@media (min-width: 769px) and (max-width: 992px) {
+  .el-dialog {
+    width: 75% !important;
+  }
+
+  .search-card .el-form-item {
+    width: auto;
+  }
+}
+
+/* 触摸设备优化 */
+@media (hover: none) and (pointer: coarse) {
+  /* 增大点击区域 */
+  .el-button,
+  .el-checkbox__inner,
+  .el-radio__inner {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* 优化滚动 */
+  * {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* 避免双击缩放 */
+  button,
+  a,
+  input,
+  select,
+  textarea {
+    touch-action: manipulation;
+  }
+}
+
+/* 横屏优化 */
+@media (orientation: landscape) and (max-height: 500px) {
+  .el-dialog {
+    margin-top: 2.5vh;
+    margin-bottom: 2.5vh;
+  }
+
+  .el-dialog__body {
+    max-height: 60vh;
+    overflow-y: auto;
+  }
+}
+
+/* 暗色模式支持（可选） */
+@media (prefers-color-scheme: dark) {
+  /* 可以在这里添加暗色模式的样式 */
+}
+
+/* 高对比度模式支持 */
+@media (prefers-contrast: high) {
+  /* 可以在这里添加高对比度的样式 */
+}
+
+/* 减少动画模式支持 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* 打印样式 */
+@media print {
+  .layout-sidebar,
+  .layout-header,
+  .el-button,
+  .pagination-container {
+    display: none !important;
+  }
+
+  .layout-main {
+    padding: 0;
+  }
+
+  .table-card {
+    box-shadow: none;
+    border: none;
+  }
+}

@@ -2,19 +2,23 @@ const express = require('express');
 const Warehouse = require('../models/Warehouse');
 const Inventory = require('../models/Inventory');
 const { auth, requireRole } = require('../middleware/auth');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
 // 获取仓库列表
 router.get('/', auth, async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 10, 
-      keyword, 
-      status 
+    const {
+      page = 1,
+      limit = 10,
+      keyword,
+      status,
+      name,
+      code,
+      manager
     } = req.query;
-    
+
     const query = {};
 
     if (keyword) {
@@ -23,6 +27,14 @@ router.get('/', auth, async (req, res) => {
         { code: { $regex: keyword, $options: 'i' } },
         { location: { $regex: keyword, $options: 'i' } },
       ];
+    } else {
+      // 支持旧格式的搜索参数（向后兼容）
+      if (name) {
+        query.name = { $regex: name, $options: 'i' };
+      }
+      if (code) {
+        query.code = { $regex: code, $options: 'i' };
+      }
     }
 
     if (status !== undefined) {
@@ -38,8 +50,15 @@ router.get('/', auth, async (req, res) => {
 
     const total = await Warehouse.countDocuments(query);
 
+    // 统一数据格式，确保前端字段匹配
+    const formattedWarehouses = warehouses.map(warehouse => ({
+      ...warehouse.toObject(),
+      id: warehouse._id,
+      manager: warehouse.manager || '',
+    }));
+
     res.json({
-      warehouses,
+      warehouses: formattedWarehouses,
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
@@ -48,6 +67,7 @@ router.get('/', auth, async (req, res) => {
       },
     });
   } catch (error) {
+    logger.error('获取仓库列表失败:', error);
     res.status(500).json({ message: '获取仓库列表失败', error: error.message });
   }
 });
@@ -59,8 +79,35 @@ router.get('/options/list', auth, async (req, res) => {
       .select('name code location')
       .sort({ sort: 1, name: 1 });
 
-    res.json({ warehouses });
+    // 统一数据格式，添加id字段
+    const formattedWarehouses = warehouses.map(w => ({
+      ...w.toObject(),
+      id: w._id,
+    }));
+
+    res.json({ warehouses: formattedWarehouses });
   } catch (error) {
+    logger.error('获取仓库列表失败:', error);
+    res.status(500).json({ message: '获取仓库列表失败', error: error.message });
+  }
+});
+
+// 获取仓库下拉列表（别名，兼容前端调用）
+router.get('/options', auth, async (req, res) => {
+  try {
+    const warehouses = await Warehouse.find({ status: true })
+      .select('name code location')
+      .sort({ sort: 1, name: 1 });
+
+    // 统一数据格式，添加id字段
+    const formattedWarehouses = warehouses.map(w => ({
+      ...w.toObject(),
+      id: w._id,
+    }));
+
+    res.json({ warehouses: formattedWarehouses });
+  } catch (error) {
+    logger.error('获取仓库列表失败:', error);
     res.status(500).json({ message: '获取仓库列表失败', error: error.message });
   }
 });
@@ -79,19 +126,26 @@ router.get('/:id', auth, async (req, res) => {
     // 获取该仓库的库存统计
     const inventoryStats = await Inventory.aggregate([
       { $match: { warehouse: warehouse._id } },
-      { $group: { 
-          _id: null, 
+      { $group: {
+          _id: null,
           totalProducts: { $sum: 1 },
           totalQuantity: { $sum: '$quantity' }
         }
       }
     ]);
 
-    res.json({ 
-      warehouse,
+    // 统一数据格式
+    const formattedWarehouse = {
+      ...warehouse.toObject(),
+      id: warehouse._id,
+    };
+
+    res.json({
+      warehouse: formattedWarehouse,
       stats: inventoryStats[0] || { totalProducts: 0, totalQuantity: 0 },
     });
   } catch (error) {
+    logger.error('获取仓库详情失败:', error);
     res.status(500).json({ message: '获取仓库详情失败', error: error.message });
   }
 });
@@ -99,7 +153,12 @@ router.get('/:id', auth, async (req, res) => {
 // 创建仓库
 router.post('/', auth, requireRole(['admin', 'manager']), async (req, res) => {
   try {
-    const { name, code, location, manager, phone, description, sort } = req.body;
+    // 支持字段映射（向后兼容）
+    const { name, code, location, address, manager, phone, description, remark, sort, status } = req.body;
+
+    // 字段映射
+    const mappedLocation = location || address;
+    const mappedDescription = description || remark;
 
     // 检查编码是否已存在
     const existingWarehouse = await Warehouse.findOne({ code });
@@ -110,11 +169,12 @@ router.post('/', auth, requireRole(['admin', 'manager']), async (req, res) => {
     const warehouse = new Warehouse({
       name,
       code,
-      location,
+      location: mappedLocation,
       manager,
       phone,
-      description,
+      description: mappedDescription,
       sort: sort || 0,
+      status: status !== undefined ? status : true,
       createdBy: req.user._id,
     });
 
@@ -126,6 +186,7 @@ router.post('/', auth, requireRole(['admin', 'manager']), async (req, res) => {
       warehouse,
     });
   } catch (error) {
+    logger.error('创建仓库失败:', error);
     res.status(500).json({ message: '创建仓库失败', error: error.message });
   }
 });
@@ -138,7 +199,12 @@ router.put('/:id', auth, requireRole(['admin', 'manager']), async (req, res) => 
       return res.status(404).json({ message: '仓库不存在' });
     }
 
-    const { name, code, location, manager, phone, description, sort, status } = req.body;
+    // 支持字段映射（向后兼容）
+    const { name, code, location, address, manager, phone, description, remark, sort, status } = req.body;
+
+    // 字段映射
+    const mappedLocation = location !== undefined ? location : (address !== undefined ? address : warehouse.location);
+    const mappedDescription = description !== undefined ? description : (remark !== undefined ? remark : warehouse.description);
 
     // 检查编码是否被其他仓库使用
     if (code && code !== warehouse.code) {
@@ -150,10 +216,10 @@ router.put('/:id', auth, requireRole(['admin', 'manager']), async (req, res) => 
 
     if (name !== undefined) warehouse.name = name;
     if (code !== undefined) warehouse.code = code;
-    if (location !== undefined) warehouse.location = location;
+    if (mappedLocation !== undefined) warehouse.location = mappedLocation;
     if (manager !== undefined) warehouse.manager = manager;
     if (phone !== undefined) warehouse.phone = phone;
-    if (description !== undefined) warehouse.description = description;
+    if (mappedDescription !== undefined) warehouse.description = mappedDescription;
     if (sort !== undefined) warehouse.sort = sort;
     if (status !== undefined) warehouse.status = status;
 
@@ -165,6 +231,7 @@ router.put('/:id', auth, requireRole(['admin', 'manager']), async (req, res) => 
       warehouse,
     });
   } catch (error) {
+    logger.error('更新仓库失败:', error);
     res.status(500).json({ message: '更新仓库失败', error: error.message });
   }
 });

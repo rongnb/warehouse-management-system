@@ -2,6 +2,7 @@ const express = require('express');
 const Supplier = require('../models/Supplier');
 const Product = require('../models/Product');
 const { auth, requireRole } = require('../middleware/auth');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
@@ -65,6 +66,25 @@ router.get('/options/list', auth, async (req, res) => {
       .sort({ name: 1 });
 
     res.json({ suppliers });
+  } catch (error) {
+    res.status(500).json({ message: '获取供应商列表失败', error: error.message });
+  }
+});
+
+// 获取供应商下拉列表（别名，兼容前端调用）
+router.get('/options', auth, async (req, res) => {
+  try {
+    const suppliers = await Supplier.find({ status: true })
+      .select('name code contact phone')
+      .sort({ name: 1 });
+
+    // 统一数据格式，添加id字段
+    const formattedSuppliers = suppliers.map(s => ({
+      ...s.toObject(),
+      id: s._id,
+    }));
+
+    res.json({ suppliers: formattedSuppliers });
   } catch (error) {
     res.status(500).json({ message: '获取供应商列表失败', error: error.message });
   }

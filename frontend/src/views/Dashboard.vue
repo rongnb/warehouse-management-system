@@ -138,13 +138,14 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue';
 import { useRouter } from 'vue-router';
+import { ElMessage } from 'element-plus';
 import * as echarts from 'echarts';
-import { 
-  Goods, 
-  Wallet, 
-  Bottom, 
-  Top, 
-  TrendCharts 
+import {
+  Goods,
+  Wallet,
+  Bottom,
+  Top,
+  TrendCharts
 } from '@element-plus/icons-vue';
 import { apiClient } from '@/stores';
 

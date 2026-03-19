@@ -4,6 +4,7 @@ const Inventory = require('../models/Inventory');
 const Transaction = require('../models/Transaction');
 const { auth } = require('../middleware/auth');
 const dayjs = require('dayjs');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 
@@ -68,7 +69,7 @@ router.get('/stats', auth, async (req, res) => {
     res.json({
       productCount,
       productGrowth,
-      inventoryValue: inventoryValue.toFixed(2),
+      inventoryValue: Math.round(inventoryValue * 100) / 100,
       inventoryGrowth,
       todayIn: todayIn[0]?.total || 0,
       inRate,

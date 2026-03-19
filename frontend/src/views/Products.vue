@@ -2,12 +2,22 @@
   <div class="page-container">
     <div class="page-header">
       <h2 class="page-title">商品管理</h2>
-      <el-button type="primary" @click="handleAdd">
-        <el-icon><Plus /></el-icon>
-        新增商品
-      </el-button>
+      <div class="header-buttons">
+        <el-button type="primary" @click="handleAdd">
+          <el-icon><Plus /></el-icon>
+          新增商品
+        </el-button>
+        <el-button type="success" @click="showImportDialog = true">
+          <el-icon><Upload /></el-icon>
+          导入商品
+        </el-button>
+        <el-button @click="handleDownloadTemplate">
+          <el-icon><Download /></el-icon>
+          下载模板
+        </el-button>
+      </div>
     </div>
-    
+
     <!-- 搜索区域 -->
     <el-card class="search-card">
       <el-form :model="searchForm" inline label-width="80px">
@@ -20,7 +30,7 @@
             @keyup.enter="handleSearch"
           />
         </el-form-item>
-        
+
         <el-form-item label="分类">
           <el-select
             v-model="searchForm.category"
@@ -36,7 +46,7 @@
             />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="供应商">
           <el-select
             v-model="searchForm.supplier"
@@ -52,7 +62,7 @@
             />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item label="状态">
           <el-select
             v-model="searchForm.status"
@@ -64,7 +74,7 @@
             <el-option label="禁用" :value="false" />
           </el-select>
         </el-form-item>
-        
+
         <el-form-item>
           <el-button type="primary" @click="handleSearch">
             <el-icon><Search /></el-icon>
@@ -77,7 +87,7 @@
         </el-form-item>
       </el-form>
     </el-card>
-    
+
     <!-- 商品列表 -->
     <el-card class="table-card">
       <el-table
@@ -117,6 +127,7 @@
             </el-tag>
           </template>
         </el-table-column>
+        <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
         <el-table-column prop="createdAt" label="创建时间" width="160" />
         <el-table-column label="操作" width="180" fixed="right" align="center">
           <template #default="{ row }">
@@ -132,7 +143,7 @@
           </template>
         </el-table-column>
       </el-table>
-      
+
       <!-- 分页 -->
       <div class="pagination-container">
         <el-pagination
@@ -146,7 +157,7 @@
         />
       </div>
     </el-card>
-    
+
     <!-- 新增/编辑弹窗 -->
     <el-dialog
       v-model="dialogVisible"
@@ -168,7 +179,14 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="SKU" prop="sku">
-              <el-input v-model="form.sku" placeholder="请输入SKU" />
+              <el-input
+                v-model="form.sku"
+                :placeholder="isEdit ? '请输入SKU' : '不填则自动生成'"
+                :disabled="!isEdit"
+              />
+              <div v-if="!isEdit" style="font-size: 12px; color: #909399; margin-top: 4px;">
+                新增商品时，SKU会自动生成
+              </div>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -206,6 +224,16 @@
           <el-col :span="12">
             <el-form-item label="规格">
               <el-input v-model="form.specification" placeholder="请输入规格" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="商品型号">
+              <el-input v-model="form.modelName" placeholder="请输入商品型号" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="生产厂家">
+              <el-input v-model="form.manufacturer" placeholder="请输入生产厂家" />
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -251,7 +279,7 @@
               />
             </el-form-item>
           </el-col>
-          <el-col :span="24">
+          <el-col :span="12">
             <el-form-item label="描述">
               <el-input
                 v-model="form.description"
@@ -262,13 +290,23 @@
             </el-form-item>
           </el-col>
           <el-col :span="12">
+            <el-form-item label="备注">
+              <el-input
+                v-model="form.remark"
+                type="textarea"
+                :rows="3"
+                placeholder="请输入备注信息"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
             <el-form-item label="状态" prop="status">
               <el-switch v-model="form.status" active-text="启用" inactive-text="禁用" />
             </el-form-item>
           </el-col>
         </el-row>
       </el-form>
-      
+
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
         <el-button type="primary" @click="handleSubmit" :loading="submitLoading">
@@ -276,25 +314,87 @@
         </el-button>
       </template>
     </el-dialog>
+
+    <!-- 导入对话框 -->
+    <el-dialog
+      v-model="showImportDialog"
+      title="导入商品"
+      width="600px"
+      destroy-on-close
+    >
+      <el-row :gutter="20">
+        <el-col :span="12">
+          <el-card
+            class="import-card"
+            :class="{ 'is-active': importMode === 'create' }"
+            shadow="hover"
+            @click="handleImportMode('create')"
+          >
+            <div class="import-card-icon">
+              <el-icon :size="40"><DocumentAdd /></el-icon>
+            </div>
+            <div class="import-card-title">新建商品</div>
+            <div class="import-card-desc">导入新商品信息，自动创建商品档案</div>
+          </el-card>
+        </el-col>
+        <el-col :span="12">
+          <el-card
+            class="import-card"
+            :class="{ 'is-active': importMode === 'inventory' }"
+            shadow="hover"
+            @click="handleImportMode('inventory')"
+          >
+            <div class="import-card-icon">
+              <el-icon :size="40"><Box /></el-icon>
+            </div>
+            <div class="import-card-title">自动入库</div>
+            <div class="import-card-desc">创建商品同时自动入库到指定仓库</div>
+          </el-card>
+        </el-col>
+      </el-row>
+      <template #footer>
+        <el-button @click="showImportDialog = false">取消</el-button>
+        <el-button type="primary" @click="startImport" :disabled="!importMode">
+          下一步
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <!-- Excel导入组件 -->
+    <ExcelImportComponent
+      v-model:visible="showExcelImportDialog"
+      :mode="importMode"
+      @import-success="handleImportSuccess"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, reactive, onMounted } from 'vue';
-import { 
-  Plus, 
-  Search, 
-  Refresh, 
-  View, 
-  Edit, 
-  Delete 
+import {
+  Plus,
+  Search,
+  Refresh,
+  View,
+  Edit,
+  Delete,
+  Upload,
+  DocumentAdd,
+  Box,
+  Download
 } from '@element-plus/icons-vue';
 import type { FormInstance, FormRules } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { apiClient } from '@/stores';
+import ExcelImportComponent from '@/components/ExcelImportComponent.vue';
+import * as XLSX from 'xlsx';
 
 const loading = ref(false);
 const submitLoading = ref(false);
 const dialogVisible = ref(false);
+const showImportDialog = ref(false);
+const showExcelImportDialog = ref(false);
+const importMode = ref<'create' | 'inventory'>('create');
 const isEdit = ref(false);
 const formRef = ref<FormInstance>();
 const tableData = ref([]);
@@ -322,17 +422,21 @@ const form = reactive({
   supplier: '',
   description: '',
   specification: '',
+  modelName: '',
+  manufacturer: '',
   unit: '个',
   price: 0,
   costPrice: 0,
   minStock: 0,
   maxStock: 99999,
   status: true,
+  remark: '',
 });
 
 const rules = reactive<FormRules>({
   name: [{ required: true, message: '请输入商品名称', trigger: 'blur' }],
-  sku: [{ required: true, message: '请输入SKU', trigger: 'blur' }],
+  // SKU在编辑时必填，新增时自动生成
+  sku: (isEdit.value ? [{ required: true, message: '请输入SKU', trigger: 'blur' }] : []),
   category: [{ required: true, message: '请选择分类', trigger: 'change' }],
   supplier: [{ required: true, message: '请选择供应商', trigger: 'change' }],
   unit: [{ required: true, message: '请输入单位', trigger: 'blur' }],
@@ -349,7 +453,7 @@ const loadProducts = async () => {
       limit: pagination.limit,
       ...searchForm,
     };
-    
+
     const response = await apiClient.get('/api/products', { params });
     tableData.value = response.data.products;
     pagination.total = response.data.pagination.total;
@@ -368,7 +472,7 @@ const loadOptions = async () => {
       apiClient.get('/api/categories/options'),
       apiClient.get('/api/suppliers/options'),
     ]);
-    
+
     categories.value = categoriesRes.data.categories;
     suppliers.value = suppliersRes.data.suppliers;
   } catch (error) {
@@ -401,14 +505,84 @@ const handleAdd = () => {
     supplier: '',
     description: '',
     specification: '',
+    modelName: '',
+    manufacturer: '',
     unit: '个',
     price: 0,
     costPrice: 0,
     minStock: 0,
     maxStock: 99999,
     status: true,
+    remark: '',
   });
   dialogVisible.value = true;
+};
+
+// 处理导入模式选择
+const handleImportMode = (mode: 'create' | 'inventory') => {
+  importMode.value = mode;
+};
+
+// 开始导入
+const startImport = () => {
+  showImportDialog.value = false;
+  showExcelImportDialog.value = true;
+};
+
+// 导入成功回调
+const handleImportSuccess = () => {
+  ElMessage.success('导入成功');
+  loadProducts();
+};
+
+// 下载模板
+const handleDownloadTemplate = () => {
+  try {
+    // 创建模板数据
+    const templateData = [
+      {
+        '产品名称': '示例商品1',
+        'SKU': 'PROD001',
+        '规格': '100ml',
+        '单位': '瓶',
+        '售价': 10.00,
+        '成本价': 5.00,
+        '库存下限': 10,
+        '库存上限': 1000,
+        '用途': '示例用途',
+        '产品型号': 'Model001',
+        '厂家': '示例厂家',
+        '备注': '示例备注',
+        '入库数量': '',
+      },
+      {
+        '产品名称': '示例商品2',
+        'SKU': 'PROD002',
+        '规格': '500g',
+        '单位': '袋',
+        '售价': 20.00,
+        '成本价': 10.00,
+        '库存下限': 5,
+        '库存上限': 500,
+        '用途': '示例用途',
+        '产品型号': 'Model002',
+        '厂家': '示例厂家',
+        '备注': '示例备注',
+        '入库数量': '',
+      },
+    ];
+
+    // 创建工作簿和工作表
+    const worksheet = XLSX.utils.json_to_sheet(templateData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '商品数据');
+
+    // 导出文件
+    XLSX.writeFile(workbook, '商品导入模板.xlsx');
+    ElMessage.success('模板下载成功');
+  } catch (error) {
+    ElMessage.error('下载模板失败');
+  }
 };
 
 const handleEdit = (row: any) => {
@@ -421,18 +595,20 @@ const handleEdit = (row: any) => {
     supplier: row.supplier,
     description: row.description,
     specification: row.specification,
+    modelName: row.modelName || '',
+    manufacturer: row.manufacturer || '',
     unit: row.unit,
     price: row.price,
     costPrice: row.costPrice,
     minStock: row.minStock,
     maxStock: row.maxStock,
     status: row.status,
+    remark: row.remark || '',
   });
   dialogVisible.value = true;
 };
 
 const handleView = (row: any) => {
-  // 跳转到商品详情页
   ElMessage.info('查看功能开发中');
 };
 
@@ -447,24 +623,25 @@ const handleDelete = async (row: any) => {
         type: 'warning',
       }
     );
-    
+
     await apiClient.delete(`/api/products/${row.id}`);
     ElMessage.success('删除成功');
     loadProducts();
-  } catch (error) {
+  } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error('删除失败');
+      const errorMsg = error.response?.data?.message || '删除失败';
+      ElMessage.error(errorMsg);
     }
   }
 };
 
 const handleSubmit = async () => {
   if (!formRef.value) return;
-  
+
   try {
     await formRef.value.validate();
     submitLoading.value = true;
-    
+
     if (isEdit.value) {
       await apiClient.put(`/api/products/${form.id}`, form);
       ElMessage.success('更新成功');
@@ -472,7 +649,7 @@ const handleSubmit = async () => {
       await apiClient.post('/api/products', form);
       ElMessage.success('创建成功');
     }
-    
+
     dialogVisible.value = false;
     loadProducts();
   } catch (error: any) {
@@ -500,6 +677,11 @@ onMounted(() => {
   margin-bottom: 24px;
 }
 
+.header-buttons {
+  display: flex;
+  gap: 10px;
+}
+
 .page-title {
   font-size: 24px;
   font-weight: 600;
@@ -508,4 +690,57 @@ onMounted(() => {
 }
 
 .search-card {
-  margin-bottom
+  margin-bottom: 24px;
+}
+
+.table-card {
+  margin-bottom: 24px;
+}
+
+.pagination-container {
+  margin-top: 20px;
+  text-align: right;
+}
+
+.import-card {
+  cursor: pointer;
+  transition: all 0.3s ease;
+  border: 2px solid transparent;
+  text-align: center;
+  padding: 30px 20px;
+  height: 180px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+}
+
+.import-card.is-active {
+  border-color: #409eff;
+  background-color: #ecf5ff;
+}
+
+.import-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+}
+
+.import-card-icon {
+  margin-bottom: 15px;
+  color: #409eff;
+}
+
+.import-card-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: #303133;
+}
+
+.import-card-desc {
+  font-size: 14px;
+  color: #909399;
+  line-height: 1.5;
+}
+
+</style>

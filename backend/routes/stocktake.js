@@ -7,13 +7,14 @@ const Product = require('../models/Product');
 const Warehouse = require('../models/Warehouse');
 const Transaction = require('../models/Transaction');
 const mongoose = require('mongoose');
+const logger = require('../utils/logger');
 
 // 获取盘库列表
 router.get('/', auth, async (req, res) => {
   try {
     const { page = 1, limit = 10, status, warehouse, keyword, startDate, endDate } = req.query;
     const query = {};
-    
+
     if (status) query.status = status;
     if (warehouse) query.warehouse = warehouse;
     if (keyword) {
@@ -41,16 +42,16 @@ router.get('/', auth, async (req, res) => {
     const total = await Stocktake.countDocuments(query);
 
     res.json({
-      code: 200,
-      data: {
-        list: stocktakes,
-        total,
+      stocktakes,
+      pagination: {
         page: parseInt(page),
         limit: parseInt(limit),
+        total,
+        pages: Math.ceil(total / limit),
       },
     });
   } catch (error) {
-    res.status(500).json({ code: 500, message: '获取盘库列表失败', error: error.message });
+    res.status(500).json({ message: '获取盘库列表失败', error: error.message });
   }
 });
 
@@ -62,15 +63,15 @@ router.get('/:id', auth, async (req, res) => {
       .populate('createdBy', 'realName username')
       .populate('firstConfirmedBy', 'realName username')
       .populate('secondConfirmedBy', 'realName username')
-      .populate('items.product', 'name sku spec unit purchasePrice');
+      .populate('items.product', 'name sku spec unit price');
 
     if (!stocktake) {
-      return res.status(404).json({ code: 404, message: '盘库记录不存在' });
+      return res.status(404).json({ message: '盘库记录不存在' });
     }
 
-    res.json({ code: 200, data: stocktake });
+    res.json({ stocktake });
   } catch (error) {
-    res.status(500).json({ code: 500, message: '获取盘库详情失败', error: error.message });
+    res.status(500).json({ message: '获取盘库详情失败', error: error.message });
   }
 });
 
@@ -80,17 +81,17 @@ router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), as
     const { title, warehouse, remark } = req.body;
 
     if (!title || !warehouse) {
-      return res.status(400).json({ code: 400, message: '标题和仓库不能为空' });
+      return res.status(400).json({ message: '标题和仓库不能为空' });
     }
 
     const warehouseExists = await Warehouse.findById(warehouse);
     if (!warehouseExists) {
-      return res.status(400).json({ code: 400, message: '仓库不存在' });
+      return res.status(400).json({ message: '仓库不存在' });
     }
 
     // 获取该仓库所有库存
     const inventories = await Inventory.find({ warehouse })
-      .populate('product', 'name sku spec unit purchasePrice');
+      .populate('product', 'name sku spec unit price');
 
     const items = inventories.map(inv => {
       const systemQuantity = inv.quantity;
@@ -104,8 +105,8 @@ router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), as
         actualQuantity: 0,
         difference: -systemQuantity,
         differenceType: 'loss',
-        unitPrice: inv.product.purchasePrice || 0,
-        totalAmount: -systemQuantity * (inv.product.purchasePrice || 0),
+        unitPrice: inv.product.price || 0,
+        totalAmount: -systemQuantity * (inv.product.price || 0),
       };
     });
 
@@ -121,9 +122,9 @@ router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), as
 
     await stocktake.save();
 
-    res.json({ code: 200, data: stocktake, message: '盘库单创建成功' });
+    res.json({ stocktake, message: '盘库单创建成功' });
   } catch (error) {
-    res.status(500).json({ code: 500, message: '创建盘库单失败', error: error.message });
+    res.status(500).json({ message: '创建盘库单失败', error: error.message });
   }
 });
 
@@ -135,11 +136,11 @@ router.put('/:id', auth, async (req, res) => {
 
     const stocktake = await Stocktake.findById(id);
     if (!stocktake) {
-      return res.status(404).json({ code: 404, message: '盘库记录不存在' });
+      return res.status(404).json({ message: '盘库记录不存在' });
     }
 
     if (stocktake.status !== 'draft') {
-      return res.status(400).json({ code: 400, message: '只能编辑草稿状态的盘库单' });
+      return res.status(400).json({ message: '只能编辑草稿状态的盘库单' });
     }
 
     // 计算盘盈盘亏
@@ -151,7 +152,7 @@ router.put('/:id', auth, async (req, res) => {
     const updatedItems = items.map(item => {
       const difference = item.actualQuantity - item.systemQuantity;
       let differenceType = 'none';
-      
+
       if (difference > 0) {
         differenceType = 'profit';
         totalProfitQuantity += difference;
@@ -179,9 +180,9 @@ router.put('/:id', auth, async (req, res) => {
 
     await stocktake.save();
 
-    res.json({ code: 200, data: stocktake, message: '盘库单更新成功' });
+    res.json({ stocktake, message: '盘库单更新成功' });
   } catch (error) {
-    res.status(500).json({ code: 500, message: '更新盘库单失败', error: error.message });
+    res.status(500).json({ message: '更新盘库单失败', error: error.message });
   }
 });
 
@@ -192,19 +193,19 @@ router.post('/:id/submit', auth, async (req, res) => {
 
     const stocktake = await Stocktake.findById(id);
     if (!stocktake) {
-      return res.status(404).json({ code: 404, message: '盘库记录不存在' });
+      return res.status(404).json({ message: '盘库记录不存在' });
     }
 
     if (stocktake.status !== 'draft') {
-      return res.status(400).json({ code: 400, message: '只能提交草稿状态的盘库单' });
+      return res.status(400).json({ message: '只能提交草稿状态的盘库单' });
     }
 
     stocktake.status = 'confirming';
     await stocktake.save();
 
-    res.json({ code: 200, message: '盘库单已提交，等待核实' });
+    res.json({ message: '盘库单已提交，等待核实' });
   } catch (error) {
-    res.status(500).json({ code: 500, message: '提交盘库单失败', error: error.message });
+    res.status(500).json({ message: '提交盘库单失败', error: error.message });
   }
 });
 
@@ -216,11 +217,11 @@ router.post('/:id/confirm', auth, async (req, res) => {
 
     const stocktake = await Stocktake.findById(id);
     if (!stocktake) {
-      return res.status(404).json({ code: 404, message: '盘库记录不存在' });
+      return res.status(404).json({ message: '盘库记录不存在' });
     }
 
     if (stocktake.status !== 'confirming') {
-      return res.status(400).json({ code: 400, message: '盘库单不在核实状态' });
+      return res.status(400).json({ message: '盘库单不在核实状态' });
     }
 
     // 双人核实逻辑
@@ -230,17 +231,17 @@ router.post('/:id/confirm', auth, async (req, res) => {
       stocktake.firstConfirmedAt = new Date();
       stocktake.firstConfirmedRemark = remark || '';
       await stocktake.save();
-      res.json({ code: 200, message: '第一核实人确认成功，等待第二核实人确认' });
+      res.json({ message: '第一核实人确认成功，等待第二核实人确认' });
     } else if (!stocktake.secondConfirmedBy) {
       // 第二核实人，必须是不同的用户
       if (stocktake.firstConfirmedBy.toString() === req.user._id.toString()) {
-        return res.status(400).json({ code: 400, message: '第二核实人不能与第一核实人相同' });
+        return res.status(400).json({ message: '第二核实人不能与第一核实人相同' });
       }
       // 检查权限，第二核实人可以是管理员、经理或另一位仓管员
       if (!['manager', 'admin', 'warehouse_keeper'].includes(req.user.role)) {
-        return res.status(403).json({ code: 403, message: '第二核实人需要管理员、经理或仓管员权限' });
+        return res.status(403).json({ message: '第二核实人需要管理员、经理或仓管员权限' });
       }
-      
+
       stocktake.secondConfirmedBy = req.user._id;
       stocktake.secondConfirmedAt = new Date();
       stocktake.secondConfirmedRemark = remark || '';
@@ -266,15 +267,16 @@ router.post('/:id/confirm', auth, async (req, res) => {
             // 生成交易记录
             const transactionType = item.difference > 0 ? 'stocktake_profit' : 'stocktake_loss';
             const transaction = new Transaction({
+              transactionNo: `TR${Date.now()}`,
               type: transactionType,
               product: item.product,
               warehouse: stocktake.warehouse,
               quantity: Math.abs(item.difference),
-              unitPrice: item.unitPrice,
-              totalAmount: Math.abs(item.totalAmount),
+              price: item.unitPrice,
               referenceNo: stocktake.stocktakeNo,
               remark: `盘库${item.differenceType === 'profit' ? '盘盈' : '盘亏'}：${item.productName}`,
               createdBy: req.user._id,
+              status: 'completed',
             });
             await transaction.save({ session });
           }
@@ -284,17 +286,17 @@ router.post('/:id/confirm', auth, async (req, res) => {
         session.endSession();
 
         await stocktake.save();
-        res.json({ code: 200, message: '第二核实人确认成功，盘库完成，库存已更新' });
+        res.json({ message: '第二核实人确认成功，盘库完成，库存已更新' });
       } catch (error) {
         await session.abortTransaction();
         session.endSession();
         throw error;
       }
     } else {
-      return res.status(400).json({ code: 400, message: '盘库单已完成核实' });
+      return res.status(400).json({ message: '盘库单已完成核实' });
     }
   } catch (error) {
-    res.status(500).json({ code: 500, message: '核实盘库单失败', error: error.message });
+    res.status(500).json({ message: '核实盘库单失败', error: error.message });
   }
 });
 
@@ -305,16 +307,16 @@ router.post('/:id/cancel', auth, async (req, res) => {
     const { reason } = req.body;
 
     if (!reason) {
-      return res.status(400).json({ code: 400, message: '取消原因不能为空' });
+      return res.status(400).json({ message: '取消原因不能为空' });
     }
 
     const stocktake = await Stocktake.findById(id);
     if (!stocktake) {
-      return res.status(404).json({ code: 404, message: '盘库记录不存在' });
+      return res.status(404).json({ message: '盘库记录不存在' });
     }
 
     if (stocktake.status === 'completed') {
-      return res.status(400).json({ code: 400, message: '已完成的盘库单不能取消' });
+      return res.status(400).json({ message: '已完成的盘库单不能取消' });
     }
 
     stocktake.status = 'cancelled';
@@ -324,9 +326,9 @@ router.post('/:id/cancel', auth, async (req, res) => {
 
     await stocktake.save();
 
-    res.json({ code: 200, message: '盘库单已取消' });
+    res.json({ message: '盘库单已取消' });
   } catch (error) {
-    res.status(500).json({ code: 500, message: '取消盘库单失败', error: error.message });
+    res.status(500).json({ message: '取消盘库单失败', error: error.message });
   }
 });
 
@@ -342,7 +344,7 @@ router.get('/:id/export', auth, async (req, res) => {
       .populate('secondConfirmedBy', 'realName username');
 
     if (!stocktake) {
-      return res.status(404).json({ code: 404, message: '盘库记录不存在' });
+      return res.status(404).json({ message: '盘库记录不存在' });
     }
 
     // 构造导出数据
@@ -361,7 +363,7 @@ router.get('/:id/export', auth, async (req, res) => {
       firstConfirmedAt: stocktake.firstConfirmedAt,
       secondConfirmedBy: stocktake.secondConfirmedBy?.realName,
       secondConfirmedAt: stocktake.secondConfirmedAt,
-      createdBy: stocktake.createdBy.realName,
+      createdBy: stocktake.createdBy?.realName,
       createdAt: stocktake.createdAt,
       remark: stocktake.remark,
       items: stocktake.items.map(item => ({
@@ -379,9 +381,9 @@ router.get('/:id/export', auth, async (req, res) => {
       })),
     };
 
-    res.json({ code: 200, data: exportData, message: '导出成功' });
+    res.json({ data: exportData, message: '导出成功' });
   } catch (error) {
-    res.status(500).json({ code: 500, message: '导出盘库报表失败', error: error.message });
+    res.status(500).json({ message: '导出盘库报表失败', error: error.message });
   }
 });
 

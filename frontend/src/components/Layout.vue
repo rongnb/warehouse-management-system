@@ -19,9 +19,45 @@
         router
         unique-opened
       >
-        <el-menu-item index="/stocktake">
+        <el-menu-item index="/dashboard">
+          <el-icon><DataBoard /></el-icon>
+          <template #title>仪表盘</template>
+        </el-menu-item>
+        <el-menu-item index="/products">
           <el-icon><Goods /></el-icon>
+          <template #title>商品管理</template>
+        </el-menu-item>
+        <el-menu-item index="/inventory">
+          <el-icon><Box /></el-icon>
+          <template #title>库存管理</template>
+        </el-menu-item>
+        <el-menu-item index="/transactions">
+          <el-icon><Tickets /></el-icon>
+          <template #title>出入库管理</template>
+        </el-menu-item>
+        <el-menu-item index="/stocktake">
+          <el-icon><CircleCheck /></el-icon>
           <template #title>库存盘点</template>
+        </el-menu-item>
+        <el-menu-item index="/suppliers">
+          <el-icon><OfficeBuilding /></el-icon>
+          <template #title>供应商管理</template>
+        </el-menu-item>
+        <el-menu-item index="/warehouses">
+          <el-icon><OfficeBuilding /></el-icon>
+          <template #title>仓库管理</template>
+        </el-menu-item>
+        <el-menu-item index="/categories">
+          <el-icon><Menu /></el-icon>
+          <template #title>分类管理</template>
+        </el-menu-item>
+        <!-- 只有超级管理员和管理员可以看到用户管理 -->
+        <el-menu-item
+          v-if="userInfo?.role === 'admin' || userInfo?.role === 'manager'"
+          index="/users"
+        >
+          <el-icon><User /></el-icon>
+          <template #title>用户管理</template>
         </el-menu-item>
       </el-menu>
     </el-aside>
@@ -31,9 +67,13 @@
       <!-- 顶部导航 -->
       <el-header class="layout-header">
         <div class="header-left">
-          <el-icon class="sidebar-toggle" @click="toggleSidebar">
-            <Fold v-if="sidebarOpen" />
-            <Expand v-else />
+          <!-- 移动端菜单切换按钮 -->
+          <el-icon class="mobile-menu-toggle" @click="toggleSidebar" v-if="!sidebarOpen">
+            <MenuIcon />
+          </el-icon>
+          <!-- 桌面端侧边栏切换按钮 -->
+          <el-icon class="sidebar-toggle" @click="toggleSidebar" v-if="sidebarOpen">
+            <Fold />
           </el-icon>
           
           <el-breadcrumb class="breadcrumb" separator="/">
@@ -84,13 +124,19 @@
 import { computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useGlobalStore } from '@/stores';
-import { 
-  Box, 
-  Goods, 
-  Fold, 
-  Expand, 
-  ArrowDown, 
-  SwitchButton 
+import {
+  Box,
+  Goods,
+  Fold,
+  Expand,
+  ArrowDown,
+  SwitchButton,
+  DataBoard,
+  Tickets,
+  CircleCheck,
+  OfficeBuilding,
+  Menu as MenuIcon,
+  User
 } from '@element-plus/icons-vue';
 
 const store = useGlobalStore();
@@ -259,5 +305,153 @@ onMounted(() => {
   color: #909399;
   font-size: 12px;
   border-top: 1px solid #dcdfe6;
+}
+
+/* 移动端适配 */
+@media (max-width: 768px) {
+  .layout-container {
+    min-height: 100vh;
+  }
+
+  .layout-sidebar {
+    position: fixed;
+    z-index: 1000;
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform 0.3s ease;
+  }
+
+  .layout-sidebar.sidebar-open {
+    transform: translateX(0);
+  }
+
+  .layout-header {
+    padding: 0 16px;
+    height: 60px;
+  }
+
+  .sidebar-toggle {
+    display: block;
+  }
+
+  .breadcrumb {
+    display: none;
+  }
+
+  .user-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .user-avatar {
+    width: 32px;
+    height: 32px;
+  }
+
+  .user-name {
+    display: none;
+  }
+
+  .layout-main {
+    padding: 16px;
+  }
+
+  /* 响应式内容区域 */
+  .page-container {
+    padding: 0;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 16px;
+  }
+
+  .page-title {
+    font-size: 18px;
+  }
+
+  /* 表格优化 */
+  .el-table {
+    font-size: 14px;
+  }
+
+  .el-table th,
+  .el-table td {
+    padding: 8px;
+  }
+
+  /* 对话框优化 */
+  .el-dialog {
+    width: 90% !important;
+    margin: 5vh auto;
+  }
+}
+
+/* 响应式布局 */
+@media (max-width: 576px) {
+  .layout-header {
+    padding: 0 12px;
+  }
+
+  .layout-main {
+    padding: 12px;
+  }
+
+  .page-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .page-title {
+    font-size: 16px;
+  }
+
+  /* 按钮优化 */
+  .el-button {
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+
+  /* 表格优化 */
+  .el-table {
+    font-size: 13px;
+  }
+
+  .el-table th,
+  .el-table td {
+    padding: 6px 4px;
+  }
+
+  /* 对话框优化 */
+  .el-dialog {
+    width: 95% !important;
+    margin: 2.5vh auto;
+  }
+
+  .el-dialog__body {
+    padding: 16px;
+  }
+
+  /* 响应式菜单 */
+  .layout-sidebar {
+    width: 80% !important;
+    max-width: 300px;
+  }
+
+  /* 移动端导航栏 */
+  .mobile-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .mobile-menu-toggle {
+    font-size: 20px;
+    color: #606266;
+    cursor: pointer;
+  }
 }
 </style>

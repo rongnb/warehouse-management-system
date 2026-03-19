@@ -38,3 +38,23 @@ build/
 
 # Uploads
 uploads/
+
+# Claude
+.claude/
+
+# MongoDB data
+data/
+mongodb/
+
+# Test files
+test-*.js
+test-*.html
+
+# Backup files
+*.bak
+*.tmp
+temp-*.js
+
+# Windows
+desktop.ini
+

@@ -2,8 +2,56 @@ const express = require('express');
 const Category = require('../models/Category');
 const Product = require('../models/Product');
 const { auth, requireRole } = require('../middleware/auth');
+const logger = require('../utils/logger');
 
 const router = express.Router();
+
+// 获取分类树
+router.get('/tree', auth, async (req, res) => {
+  try {
+    const { status } = req.query;
+    const query = {};
+
+    if (status !== undefined) {
+      query.status = status === 'true';
+    }
+
+    // 查询所有分类
+    const allCategories = await Category.find(query)
+      .sort({ sort: 1, createdAt: -1 });
+
+    // 构建树形结构
+    const buildTree = (parentId = null, level = 1) => {
+      const result = [];
+      const filtered = allCategories.filter(cat =>
+        cat.parentId?.toString() === parentId?.toString() ||
+        (!cat.parentId && !parentId)
+      );
+
+      for (const cat of filtered) {
+        result.push({
+          id: cat._id,
+          _id: cat._id,
+          name: cat.name,
+          code: cat.code,
+          parentId: cat.parentId,
+          level: level,
+          sort: cat.sort,
+          status: cat.status,
+          description: cat.description,
+          children: buildTree(cat._id, level + 1),
+        });
+      }
+
+      return result;
+    };
+
+    const tree = buildTree();
+    res.json({ tree });
+  } catch (error) {
+    res.status(500).json({ message: '获取分类树失败', error: error.message });
+  }
+});
 
 // 获取分类列表（树形结构）
 router.get('/', auth, async (req, res) => {
@@ -36,11 +84,11 @@ router.get('/options/list', auth, async (req, res) => {
     // 构建树形结构
     const buildTree = (parentId = null) => {
       const result = [];
-      const filtered = categories.filter(cat => 
-        cat.parentId?.toString() === parentId?.toString() || 
+      const filtered = categories.filter(cat =>
+        cat.parentId?.toString() === parentId?.toString() ||
         (!cat.parentId && !parentId)
       );
-      
+
       for (const cat of filtered) {
         result.push({
           id: cat._id,
@@ -49,7 +97,41 @@ router.get('/options/list', auth, async (req, res) => {
           children: buildTree(cat._id),
         });
       }
-      
+
+      return result;
+    };
+
+    const tree = buildTree();
+    res.json({ categories: tree });
+  } catch (error) {
+    res.status(500).json({ message: '获取分类列表失败', error: error.message });
+  }
+});
+
+// 获取分类下拉列表（别名，兼容前端调用）
+router.get('/options', auth, async (req, res) => {
+  try {
+    const categories = await Category.find({ status: true })
+      .select('name code parentId')
+      .sort({ sort: 1, name: 1 });
+
+    // 构建树形结构
+    const buildTree = (parentId = null) => {
+      const result = [];
+      const filtered = categories.filter(cat =>
+        cat.parentId?.toString() === parentId?.toString() ||
+        (!cat.parentId && !parentId)
+      );
+
+      for (const cat of filtered) {
+        result.push({
+          id: cat._id,
+          name: cat.name,
+          code: cat.code,
+          children: buildTree(cat._id),
+        });
+      }
+
       return result;
     };
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const SystemConfig = require('../models/SystemConfig');
 const { auth, requireRole } = require('../middleware/auth');
+const logger = require('../utils/logger');
 
 const router = express.Router();
 

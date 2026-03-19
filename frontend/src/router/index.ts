@@ -4,7 +4,7 @@ import type { RouteRecordRaw } from 'vue-router';
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/stocktake',
+    redirect: '/dashboard',
   },
   {
     path: '/login',
@@ -19,16 +19,64 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
     children: [
       {
+        path: 'dashboard',
+        name: 'Dashboard',
+        component: () => import('@/views/Dashboard.vue'),
+        meta: { title: '仪表盘', icon: 'DataBoard' },
+      },
+      {
+        path: 'products',
+        name: 'Products',
+        component: () => import('@/views/Products.vue'),
+        meta: { title: '商品管理', icon: 'Goods' },
+      },
+      {
+        path: 'inventory',
+        name: 'Inventory',
+        component: () => import('@/views/Inventory.vue'),
+        meta: { title: '库存管理', icon: 'Box' },
+      },
+      {
+        path: 'transactions',
+        name: 'Transactions',
+        component: () => import('@/views/Transactions.vue'),
+        meta: { title: '出入库管理', icon: 'Tickets' },
+      },
+      {
         path: 'stocktake',
         name: 'Stocktake',
         component: () => import('@/views/Stocktake.vue'),
-        meta: { title: '库存盘点', icon: 's-check' },
+        meta: { title: '库存盘点', icon: 'CircleCheck' },
+      },
+      {
+        path: 'suppliers',
+        name: 'Suppliers',
+        component: () => import('@/views/Suppliers.vue'),
+        meta: { title: '供应商管理', icon: 'OfficeBuilding' },
+      },
+      {
+        path: 'warehouses',
+        name: 'Warehouses',
+        component: () => import('@/views/Warehouses.vue'),
+        meta: { title: '仓库管理', icon: 'OfficeBuilding' },
+      },
+      {
+        path: 'categories',
+        name: 'Categories',
+        component: () => import('@/views/Categories.vue'),
+        meta: { title: '分类管理', icon: 'Menu' },
+      },
+      {
+        path: 'users',
+        name: 'Users',
+        component: () => import('@/views/Users.vue'),
+        meta: { title: '用户管理', icon: 'User' },
       },
     ],
   },
   {
     path: '/:pathMatch(.*)*',
-    redirect: '/stocktake',
+    redirect: '/dashboard',
   },
 ];
 

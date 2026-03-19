@@ -2,7 +2,7 @@
   <div class="stocktake-container">
     <div class="header">
       <h2>库存盘点</h2>
-      <el-button type="primary" @click="handleCreate" v-permission="['admin', 'manager']">
+      <el-button type="primary" @click="handleCreate">
         <el-icon><Plus /></el-icon>
         新建盘点
       </el-button>
@@ -302,7 +302,7 @@ import { ref, reactive, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Search, Refresh } from '@element-plus/icons-vue';
 import { stocktakeApi } from '@/api/stocktake';
-import { warehouseApi } from '@/api/warehouse';
+import { warehousesApi } from '@/api/warehouses';
 // import * as XLSX from 'xlsx'; // 如需导出功能请先安装xlsx依赖：npm install xlsx
 
 const loading = ref(false);
@@ -352,8 +352,8 @@ const cancelForm = reactive({
 // 获取仓库列表
 const getWarehouseList = async () => {
   try {
-    const res = await warehouseApi.getList({ page: 1, limit: 1000 });
-    warehouseList.value = res.data.list;
+    const res = await warehousesApi.getList({ page: 1, limit: 1000 });
+    warehouseList.value = res.data.warehouses;
   } catch (error) {
     ElMessage.error('获取仓库列表失败');
   }
@@ -370,8 +370,8 @@ const getList = async () => {
       endDate: dateRange.value?.[1] ? dateRange.value[1] : undefined,
     };
     const res = await stocktakeApi.getList(params);
-    tableData.value = res.data.list;
-    total.value = res.data.total;
+    tableData.value = res.data.stocktakes;
+    total.value = res.data.pagination.total;
   } catch (error) {
     ElMessage.error('获取盘点列表失败');
   } finally {
