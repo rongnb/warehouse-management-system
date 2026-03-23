@@ -83,15 +83,14 @@
             <el-button type="primary" text @click="goToInventory">查看全部</el-button>
           </template>
           <el-empty v-if="lowStockProducts.length === 0" description="暂无库存预警" />
-          <el-list v-else border>
-            <el-list-item v-for="product in lowStockProducts" :key="product.id">
-              <div class="warning-item">
-                <span class="product-name">{{ product.name }}</span>
-                <el-tag type="danger" size="small">库存不足</el-tag>
-                <span class="stock-qty">剩余: {{ product.quantity }}</span>
-              </div>
-            </el-list-item>
-          </el-list>
+          <el-table v-else :data="lowStockProducts" style="width: 100%">
+            <el-table-column prop="name" label="商品名称" />
+            <el-table-column prop="quantity" label="库存" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag type="danger" size="small">{{ row.quantity }}</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
         </el-card>
       </el-col>
       

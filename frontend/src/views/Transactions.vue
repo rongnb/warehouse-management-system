@@ -134,13 +134,7 @@
             <el-button type="primary" text size="small" @click="handleView(row)">
               查看
             </el-button>
-            <el-button type="primary" text size="small" @click="handleEdit(row)" v-if="row.status === 'pending'">
-              编辑
-            </el-button>
-            <el-button type="success" text size="small" @click="handleAudit(row)" v-if="row.status === 'pending'">
-              审核
-            </el-button>
-            <el-button type="danger" text size="small" @click="handleCancel(row)" v-if="row.status === 'pending'">
+            <el-button type="danger" text size="small" @click="handleCancel(row)" v-if="['pending', 'completed'].includes(row.status)">
               取消
             </el-button>
           </template>
@@ -262,36 +256,6 @@
       </template>
     </el-dialog>
 
-    <!-- 审核弹窗 -->
-    <el-dialog
-      v-model="auditDialogVisible"
-      title="审核交易"
-      width="500px"
-    >
-      <el-form :model="auditForm" label-width="100px">
-        <el-form-item label="审核意见">
-          <el-radio-group v-model="auditForm.status">
-            <el-radio label="approved">通过</el-radio>
-            <el-radio label="rejected">拒绝</el-radio>
-          </el-radio-group>
-        </el-form-item>
-        <el-form-item label="备注">
-          <el-input
-            v-model="auditForm.remark"
-            type="textarea"
-            :rows="3"
-            placeholder="请输入审核意见"
-          />
-        </el-form-item>
-      </el-form>
-
-      <template #footer>
-        <el-button @click="auditDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="handleAuditSubmit" :loading="auditLoading">
-          确定
-        </el-button>
-      </template>
-    </el-dialog>
 
     <!-- 取消弹窗 -->
     <el-dialog
@@ -321,12 +285,14 @@
     <!-- 图像识别弹窗 -->
     <el-dialog
       v-model="showImageRecognition"
-      title="拍照识别商品"
+      :title="isInbound ? '拍照识别商品' : '拍照识别商品'"
       width="600px"
       destroy-on-close
       class="image-recognition-dialog"
     >
       <ImageRecognitionComponent
+        :products="products"
+        :mode="isInbound ? 'inbound' : 'outbound'"
         @result="handleImageRecognitionResult"
         @cancel="showImageRecognition = false"
       />
@@ -358,10 +324,8 @@ import { initializeImageRecognizer } from '@/utils/imageRecognition';
 
 const loading = ref(false);
 const submitLoading = ref(false);
-const auditLoading = ref(false);
 const cancelLoading = ref(false);
 const dialogVisible = ref(false);
-const auditDialogVisible = ref(false);
 const cancelDialogVisible = ref(false);
 const showImageRecognition = ref(false);
 const isEdit = ref(false);
@@ -393,12 +357,6 @@ const form = reactive({
   unitPrice: 0,
   remark: '',
   type: 'in',
-});
-
-const auditForm = reactive({
-  id: '',
-  status: 'approved',
-  remark: '',
 });
 
 const cancelForm = reactive({
@@ -454,8 +412,7 @@ const loadOptions = async () => {
 const getStatusType = (status: string) => {
   const typeMap: Record<string, string> = {
     pending: 'warning',
-    approved: 'success',
-    rejected: 'danger',
+    completed: 'success',
     cancelled: 'info',
   };
   return typeMap[status] || 'info';
@@ -463,9 +420,8 @@ const getStatusType = (status: string) => {
 
 const getStatusText = (status: string) => {
   const textMap: Record<string, string> = {
-    pending: '待审核',
-    approved: '已审核',
-    rejected: '已拒绝',
+    pending: '待处理',
+    completed: '已完成',
     cancelled: '已取消',
   };
   return textMap[status] || status;
@@ -536,13 +492,6 @@ const handleEdit = (row: any) => {
   dialogVisible.value = true;
 };
 
-const handleAudit = (row: any) => {
-  auditForm.id = row.id;
-  auditForm.status = 'approved';
-  auditForm.remark = '';
-  auditDialogVisible.value = true;
-};
-
 const handleCancel = (row: any) => {
   cancelForm.id = row.id;
   cancelForm.reason = '';
@@ -577,20 +526,6 @@ const handleSubmit = async () => {
   }
 };
 
-const handleAuditSubmit = async () => {
-  try {
-    auditLoading.value = true;
-    await transactionsApi.audit(auditForm.id, auditForm);
-    ElMessage.success('审核成功');
-    auditDialogVisible.value = false;
-    loadTransactions();
-  } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || '审核失败');
-  } finally {
-    auditLoading.value = false;
-  }
-};
-
 const handleCancelSubmit = async () => {
   try {
     cancelLoading.value = true;
@@ -616,7 +551,7 @@ onMounted(() => {
 });
 
 // 处理图像识别结果
-const handleImageRecognitionResult = (result: RecognitionResult) => {
+const handleImageRecognitionResult = (result: RecognitionResult, createNew: boolean = false) => {
   console.log('图像识别结果:', result);
   showImageRecognition.value = false;
 
@@ -630,17 +565,70 @@ const handleImageRecognitionResult = (result: RecognitionResult) => {
   if (matchedProduct) {
     form.productId = matchedProduct.id;
     ElMessage.success(`已匹配到商品: ${matchedProduct.name}`);
+  } else if (createNew) {
+    // 创建新商品
+    createNewProduct(result);
   } else {
     ElMessage.info(`未找到匹配的商品，识别结果为: ${result.manufacturer} ${result.modelName}`);
   }
 
   // 将识别结果添加到备注中，作为参考
+  let remarkText = `识别结果: ${result.manufacturer} ${result.modelName} (置信度: ${Math.round(result.confidence * 100)}%)`;
+
+  // 添加OCR识别的文字
+  if (result.ocrText) {
+    remarkText += `\n识别文字: ${result.ocrText}`;
+  }
+
   if (form.remark) {
-    form.remark += `\\n识别结果: ${result.manufacturer} ${result.modelName} (置信度: ${Math.round(result.confidence * 100)}%)`;
+    form.remark += `\n${remarkText}`;
   } else {
-    form.remark = `识别结果: ${result.manufacturer} ${result.modelName} (置信度: ${Math.round(result.confidence * 100)}%)`;
+    form.remark = remarkText;
   }
 };
+
+// 创建新商品
+const createNewProduct = async (result: RecognitionResult) => {
+  try {
+    const newProductData = {
+      name: result.modelName || '未命名商品',
+      modelName: result.modelName,
+      manufacturer: result.manufacturer,
+      sku: generateSKU(result.modelName),
+      specification: '',
+      unit: '个',
+      price: 0,
+      costPrice: 0,
+      minStock: 0,
+      maxStock: 9999,
+      status: true
+    };
+
+    const response = await productsApi.create(newProductData);
+
+    if (response.data && response.data.id) {
+      // 刷新商品列表
+      await loadOptions();
+
+      // 设置新创建的商品
+      form.productId = response.data.id;
+      ElMessage.success(`已创建新商品: ${newProductData.name}`);
+    } else {
+      throw new Error('商品创建失败');
+    }
+  } catch (error: any) {
+    console.error('创建新商品失败:', error);
+    ElMessage.error(`创建新商品失败: ${error.response?.data?.message || error.message}`);
+  }
+};
+
+// 生成SKU
+const generateSKU = (modelName: string): string => {
+  const prefix = modelName.slice(0, 3).toUpperCase();
+  const timestamp = Date.now().toString().slice(-8);
+  return `${prefix}${timestamp}`;
+};
+
 </script>
 
 <style scoped>

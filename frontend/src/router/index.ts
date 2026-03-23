@@ -72,6 +72,12 @@ const routes: RouteRecordRaw[] = [
         component: () => import('@/views/Users.vue'),
         meta: { title: '用户管理', icon: 'User' },
       },
+      {
+        path: 'ocr-test',
+        name: 'OCRTest',
+        component: () => import('@/views/ImageRecognitionTest.vue'),
+        meta: { title: 'OCR识别测试', icon: 'Camera' },
+      },
     ],
   },
   {

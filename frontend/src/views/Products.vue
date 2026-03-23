@@ -228,7 +228,12 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="商品型号">
-              <el-input v-model="form.modelName" placeholder="请输入商品型号" />
+              <div style="display: flex; gap: 8px;">
+                <el-input v-model="form.modelName" placeholder="请输入商品型号" />
+                <el-button type="primary" @click="showOCRDialog = true" title="拍照识别">
+                  <el-icon><Camera /></el-icon>
+                </el-button>
+              </div>
             </el-form-item>
           </el-col>
           <el-col :span="12">
@@ -366,6 +371,24 @@
       :mode="importMode"
       @import-success="handleImportSuccess"
     />
+
+    <!-- OCR识别对话框 -->
+    <el-dialog
+      v-model="showOCRDialog"
+      title="OCR商品识别"
+      width="600px"
+      destroy-on-close
+      :before-close="handleOCRDialogClose"
+    >
+      <ImageRecognitionComponent
+        :products="tableData"
+        @result="handleOCRResult"
+        @cancel="showOCRDialog = false"
+      />
+      <template #footer>
+        <el-button @click="showOCRDialog = false">取消</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -381,19 +404,23 @@ import {
   Upload,
   DocumentAdd,
   Box,
-  Download
+  Download,
+  Camera
 } from '@element-plus/icons-vue';
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { apiClient } from '@/stores';
 import ExcelImportComponent from '@/components/ExcelImportComponent.vue';
+import ImageRecognitionComponent from '@/components/ImageRecognitionComponent.vue';
 import * as XLSX from 'xlsx';
+import type { RecognitionResult } from '@/utils/imageRecognition';
 
 const loading = ref(false);
 const submitLoading = ref(false);
 const dialogVisible = ref(false);
 const showImportDialog = ref(false);
 const showExcelImportDialog = ref(false);
+const showOCRDialog = ref(false);
 const importMode = ref<'create' | 'inventory'>('create');
 const isEdit = ref(false);
 const formRef = ref<FormInstance>();
@@ -657,6 +684,26 @@ const handleSubmit = async () => {
   } finally {
     submitLoading.value = false;
   }
+};
+
+// 处理OCR识别结果
+const handleOCRResult = (result: RecognitionResult, createNew?: boolean) => {
+  // 将识别结果填入表单
+  form.modelName = result.modelName;
+  form.manufacturer = result.manufacturer;
+
+  // 如果找到了匹配的商品，可以自动填充更多信息
+  if (createNew === false) {
+    // 可以在这里添加匹配商品的逻辑
+  }
+
+  showOCRDialog.value = false;
+  ElMessage.success('识别成功，已自动填充表单');
+};
+
+// 关闭OCR对话框
+const handleOCRDialogClose = () => {
+  showOCRDialog.value = false;
 };
 
 onMounted(() => {

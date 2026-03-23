@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>拍照功能</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: #333;
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+
+        .video-container {
+            position: relative;
+            width: 100%;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            min-height: 300px;
+        }
+
+        video {
+            width: 100%;
+            display: block;
+        }
+
+        canvas {
+            display: none;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            display: block;
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            background: #409EFF;
+            color: white;
+        }
+
+        button:hover {
+            background: #66b1ff;
+        }
+
+        button.danger {
+            background: #F56C6C;
+        }
+
+        button.success {
+            background: #67C23A;
+        }
+
+        button.primary {
+            background: #409EFF;
+        }
+
+        button.primary:hover {
+            background: #66b1ff;
+        }
+
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .status {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+
+        .status.info {
+            background: #e6f7ff;
+            border: 1px solid #91d5ff;
+        }
+
+        .status.error {
+            background: #fff1f0;
+            border: 1px solid #ffa39e;
+            color: #f5222d;
+        }
+
+        .status.success {
+            background: #f6ffed;
+            border: 1px solid #b7eb8f;
+            color: #52c41a;
+        }
+
+        .debug-info {
+            margin-top: 10px;
+            font-family: monospace;
+            font-size: 12px;
+            background: #f5f5f5;
+            padding: 10px;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📷 拍照</h1>
+
+        <div class="card">
+            <div id="status" class="status info">
+                点击下方按钮启动摄像头
+            </div>
+
+            <div class="video-container">
+                <video id="video" autoplay playsinline muted></video>
+                <img id="preview" class="preview-image" style="display: none;">
+            </div>
+            <canvas id="canvas"></canvas>
+
+            <div class="controls">
+                <button id="startBtn">启动摄像头</button>
+                <button id="captureBtn" disabled>拍照</button>
+                <button id="stopBtn" disabled class="danger">停止摄像头</button>
+                <button id="resetBtn" style="display: none;" class="success">重拍</button>
+                <button id="confirmBtn" style="display: none;" class="primary">使用这张照片</button>
+            </div>
+
+            <div id="debugInfo" class="debug-info" style="display: none;"></div>
+        </div>
+
+        <div class="card">
+            <h3>使用说明</h3>
+            <ul>
+                <li>确保使用 HTTPS 或 localhost 访问</li>
+                <li>确保浏览器有摄像头权限</li>
+                <li>确保没有其他程序占用摄像头</li>
+                <li>推荐使用 Chrome、Edge 或 Firefox 浏览器</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const preview = document.getElementById('preview');
+        const statusDiv = document.getElementById('status');
+        const debugInfo = document.getElementById('debugInfo');
+        const startBtn = document.getElementById('startBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const stopBtn = document.getElementById('stopBtn');
+        const resetBtn = document.getElementById('resetBtn');
+        const confirmBtn = document.getElementById('confirmBtn');
+
+        let stream = null;
+        let currentPhotoData = '';
+
+        // 检查是否在iframe或弹窗中打开
+        const isEmbedded = window.opener || window.parent !== window;
+        log(`是否嵌入打开: ${isEmbedded}`);
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            debugInfo.textContent += `[${timestamp}] ${message}\n`;
+            console.log(message);
+        }
+
+        function setStatus(text, type = 'info') {
+            statusDiv.textContent = text;
+            statusDiv.className = `status ${type}`;
+        }
+
+        async function startCamera() {
+            try {
+                debugInfo.style.display = 'block';
+                log('开始启动摄像头...');
+
+                // 检查是否支持
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                    throw new Error('浏览器不支持摄像头访问');
+                }
+
+                // 检查安全环境
+                const isSecure = window.location.protocol === 'https:' ||
+                                 window.location.hostname === 'localhost' ||
+                                 window.location.hostname === '127.0.0.1';
+                if (!isSecure) {
+                    throw new Error('摄像头访问需要 HTTPS 或 localhost 环境');
+                }
+
+                log(`当前协议: ${window.location.protocol}`);
+                log(`当前主机: ${window.location.hostname}`);
+
+                setStatus('正在请求摄像头权限...', 'info');
+                log('请求摄像头权限...');
+
+                // 简单的配置
+                const constraints = {
+                    video: {
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        facingMode: 'environment'
+                    },
+                    audio: false
+                };
+
+                log(`配置: ${JSON.stringify(constraints)}`);
+
+                stream = await navigator.mediaDevices.getUserMedia(constraints);
+                log('摄像头流获取成功');
+
+                video.srcObject = stream;
+                setStatus('摄像头已启动', 'success');
+
+                // 等待视频加载
+                await new Promise((resolve) => {
+                    video.onloadedmetadata = () => {
+                        log('视频元数据加载完成');
+                        video.play().then(() => {
+                            log('视频开始播放');
+                            resolve();
+                        }).catch(err => {
+                            log(`视频播放警告: ${err.message}`);
+                            resolve();
+                        });
+                    };
+
+                    setTimeout(() => {
+                        log('超时，强制继续');
+                        resolve();
+                    }, 3000);
+                });
+
+                // 更新按钮状态
+                startBtn.disabled = true;
+                captureBtn.disabled = false;
+                stopBtn.disabled = false;
+
+            } catch (error) {
+                log(`错误: ${error.name} - ${error.message}`);
+
+                let errorMsg = '摄像头访问失败';
+                if (error.name === 'NotAllowedError') {
+                    errorMsg = '请允许访问摄像头权限';
+                } else if (error.name === 'NotFoundError') {
+                    errorMsg = '未找到摄像头设备';
+                } else if (error.name === 'NotReadableError') {
+                    errorMsg = '摄像头被其他程序占用';
+                } else {
+                    errorMsg = error.message || '摄像头访问失败';
+                }
+
+                setStatus(errorMsg, 'error');
+            }
+        }
+
+        function capture() {
+            if (!video.videoWidth) {
+                log('视频未就绪');
+                return;
+            }
+
+            log('正在拍照...');
+
+            // 设置画布尺寸
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+
+            // 绘制视频帧到画布
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+            // 显示预览
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            currentPhotoData = dataUrl;
+            preview.src = dataUrl;
+            preview.style.display = 'block';
+            video.style.display = 'none';
+
+            log('拍照完成');
+
+            // 更新按钮状态
+            captureBtn.style.display = 'none';
+            resetBtn.style.display = 'inline-block';
+
+            // 如果是嵌入打开，显示"确认提交"按钮
+            if (isEmbedded) {
+                confirmBtn.style.display = 'inline-block';
+            }
+        }
+
+        function stopCamera() {
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                stream = null;
+            }
+            video.srcObject = null;
+            video.style.display = 'block';
+            preview.style.display = 'none';
+
+            // 重置按钮状态
+            startBtn.disabled = false;
+            captureBtn.disabled = true;
+            stopBtn.disabled = true;
+            captureBtn.style.display = 'inline-block';
+            resetBtn.style.display = 'none';
+
+            setStatus('摄像头已停止', 'info');
+            log('摄像头已停止');
+        }
+
+        function reset() {
+            preview.style.display = 'none';
+            video.style.display = 'block';
+            captureBtn.style.display = 'inline-block';
+            resetBtn.style.display = 'none';
+            confirmBtn.style.display = 'none';
+            currentPhotoData = '';
+        }
+
+        function confirmPhoto() {
+            if (!currentPhotoData) {
+                log('没有照片数据');
+                return;
+            }
+
+            log('使用这张照片...');
+
+            // 尝试多种方式通信
+            if (window.opener) {
+                // 通过window.opener
+                try {
+                    window.opener.postMessage({
+                        type: 'photo-taken',
+                        data: currentPhotoData
+                    }, '*');
+                    log('通过opener发送成功');
+                } catch (e) {
+                    log('opener发送失败:', e);
+                }
+            }
+
+            if (window.parent && window.parent !== window) {
+                // 通过postMessage
+                try {
+                    window.parent.postMessage({
+                        type: 'photo-taken',
+                        data: currentPhotoData
+                    }, '*');
+                    log('通过postMessage发送成功');
+                } catch (e) {
+                    log('postMessage发送失败:', e);
+                }
+            }
+
+            // 关闭窗口（如果是弹窗）
+            log('3秒后自动关闭...');
+            setTimeout(() => {
+                if (window.opener) {
+                    window.close();
+                }
+            }, 3000);
+
+            setStatus('照片已发送', 'success');
+        }
+
+        // 绑定事件
+        startBtn.addEventListener('click', startCamera);
+        captureBtn.addEventListener('click', capture);
+        stopBtn.addEventListener('click', stopCamera);
+        resetBtn.addEventListener('click', reset);
+        confirmBtn.addEventListener('click', confirmPhoto);
+
+        log('页面加载完成');
+        log(`用户代理: ${navigator.userAgent}`);
+    </script>
+</body>
+</html>

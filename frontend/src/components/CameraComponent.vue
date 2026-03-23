@@ -1,472 +1,449 @@
 <template>
-  <div class="camera-container">
+  <div class="camera-wrapper">
     <!-- 调试信息 -->
-    <div v-if="debugMode" class="debug-info">
-      <el-alert
-        title="调试信息"
-        type="info"
-        :closable="false"
-        class="debug-alert"
-      >
-        <p>状态: {{ showCamera ? '摄像头已启动' : '未启动' }}</p>
-        <p>是否支持多个摄像头: {{ hasMultipleCameras ? '是' : '否' }}</p>
-        <p>当前 facingMode: {{ currentFacingMode }}</p>
-      </el-alert>
+    <div class="debug-bar">
+      <span>状态: {{ statusText }}</span>
     </div>
 
-    <!-- 摄像头视图 -->
-    <div v-if="showCamera" class="camera-view">
-      <video
-        ref="videoRef"
-        class="camera-video"
-        autoplay
-        playsinline
-        muted
-        id="cameraVideo"
-      >
-        <source src="" type="video/mp4">
-        您的浏览器不支持视频播放。
-      </video>
-      <canvas ref="canvasRef" class="camera-canvas"></canvas>
+    <!-- 主内容区 -->
+    <div class="camera-main">
+      <!-- 阶段1: 未启动 -->
+      <div v-if="phase === 'idle'" class="idle-screen">
+        <div class="idle-content">
+          <div class="camera-icon">📷</div>
+          <p>选择拍照方式</p>
+          <button class="photo-btn" @click="openTestPage">
+            📷 使用拍照功能
+          </button>
+          <div class="divider">
+            <span>或者</span>
+          </div>
+          <button class="upload-btn" @click="triggerUpload">
+            📁 从相册选择图片
+          </button>
+        </div>
+      </div>
 
-      <!-- 加载提示 -->
-      <div v-if="isLoading" class="loading-overlay">
-        <el-icon class="loading-icon"><Loading /></el-icon>
-        <p>正在启动摄像头...</p>
+      <!-- 阶段2: 摄像头已启动 -->
+      <div v-if="phase === 'camera'" class="camera-screen">
+        <video
+          ref="videoRef"
+          class="camera-video"
+          autoplay
+          playsinline
+          muted
+        ></video>
+        <canvas ref="canvasRef" class="debug-canvas"></canvas>
+
+        <div class="camera-controls">
+          <button class="cancel-btn" @click="cancel">取消</button>
+          <button class="capture-btn" @click="capture" :disabled="isCapturing">
+            {{ isCapturing ? '...' : '拍照' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 阶段3: 预览照片 -->
+      <div v-if="phase === 'preview'" class="preview-screen">
+        <!-- 调试信息 -->
+        <div class="debug-info" v-if="photoData">
+          <div>照片数据长度: {{ photoData.length }} 字符</div>
+        </div>
+
+        <!-- 预览图片 -->
+        <img :src="photoData" class="preview-img" alt="预览" />
+
+        <div class="preview-controls">
+          <button class="retake-btn" @click="retake">重拍</button>
+          <button class="confirm-btn" @click="confirm">确认</button>
+        </div>
       </div>
     </div>
 
-    <!-- 照片预览 -->
-    <div v-if="photoData && !showCamera" class="photo-preview">
-      <img :src="photoData" alt="预览照片" class="preview-image" />
-      <div class="preview-controls">
-        <el-button type="primary" @click="retake">
-          <el-icon><Refresh /></el-icon>
-          重拍
-        </el-button>
-        <el-button type="success" @click="confirm">
-          <el-icon><Check /></el-icon>
-          确认
-        </el-button>
-        <el-button @click="cancel">
-          <el-icon><Close /></el-icon>
-          取消
-        </el-button>
-      </div>
-    </div>
-
-    <!-- 控制按钮 -->
-    <div v-if="showCamera" class="camera-controls">
-      <div class="top-controls">
-        <el-button
-          v-if="hasMultipleCameras"
-          type="text"
-          @click="toggleCamera"
-          class="camera-switch"
-        >
-          <el-icon><VideoCamera /></el-icon>
-          切换摄像头
-        </el-button>
-        <el-button type="text" @click="cancel" class="cancel-button">
-          <el-icon><Close /></el-icon>
-          取消
-        </el-button>
-      </div>
-
-      <div class="bottom-controls">
-        <el-button type="text" @click="uploadImage" class="upload-button">
-          <el-icon><Upload /></el-icon>
-          从相册选择
-        </el-button>
-        <el-button
-          type="primary"
-          @click="takePhoto"
-          :disabled="isTakingPhoto"
-          class="take-photo-button"
-        >
-          {{ isTakingPhoto ? '拍照中...' : '拍照' }}
-        </el-button>
-      </div>
-    </div>
-
-    <!-- 图片上传区域 -->
     <input
       ref="fileInputRef"
       type="file"
       accept="image/*"
-      class="file-input"
+      class="hidden"
       @change="handleFileSelect"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue';
-import { ElMessage } from 'element-plus';
-import { VideoCamera, Refresh, Check, Close, Upload, Loading } from '@element-plus/icons-vue';
+import { ref, computed } from 'vue';
 
 const videoRef = ref<HTMLVideoElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const streamRef = ref<MediaStream | null>(null);
 
-// 状态
-const showCamera = ref(false);
-const isTakingPhoto = ref(false);
-const photoData = ref<string | null>(null);
-const hasMultipleCameras = ref(false);
-const currentFacingMode = ref<'user' | 'environment'>('user'); // 桌面端默认使用前置摄像头（像镜子一样）
-const hasFlash = ref(false);
-const flashEnabled = ref(false);
-const debugMode = ref(true); // 调试模式，显示详细信息
-const isLoading = ref(false); // 加载状态
+type Phase = 'idle' | 'camera' | 'preview';
+const phase = ref<Phase>('idle');
+const isStarting = ref(false);
+const isCapturing = ref(false);
+const photoData = ref<string>('');
 
-// 配置
-const videoConstraints = ref({
-  width: { ideal: 1280 },
-  height: { ideal: 720 },
-  facingMode: currentFacingMode.value,
-});
-
-// 暴露事件
 const emit = defineEmits<{
   (e: 'photo-taken', data: string): void;
   (e: 'cancel'): void;
 }>();
 
-// 初始化摄像头
-const initializeCamera = async () => {
-  isLoading.value = true;
+const statusText = computed(() => {
+  if (phase.value === 'idle') return '等待启动';
+  if (phase.value === 'camera') return '摄像头已启动';
+  if (phase.value === 'preview') return '预览照片';
+  return '';
+});
+
+const startCamera = async () => {
+  if (isStarting.value) return;
+  isStarting.value = true;
+
+  console.log('=== 开始启动摄像头 ===');
+  console.log('协议:', window.location.protocol);
+  console.log('主机:', window.location.hostname);
+
   try {
     const mediaDevices = navigator.mediaDevices;
-    if (!mediaDevices || !mediaDevices.getUserMedia) {
-      throw new Error('浏览器不支持摄像头访问，请使用Chrome、Edge或Firefox浏览器');
+    if (!mediaDevices) {
+      throw new Error('navigator.mediaDevices 不存在');
     }
 
-    // 检查是否是安全环境
-    const isSecure = window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-    if (!isSecure) {
-      throw new Error('摄像头访问需要HTTPS或localhost环境');
-    }
-
-    // 获取可用的视频输入设备
-    const devices = await mediaDevices.enumerateDevices();
-    const videoInputs = devices.filter((device) => device.kind === 'videoinput');
-    hasMultipleCameras.value = videoInputs.length > 1;
-    hasFlash.value = devices.some((device) => device.kind === 'videoinput' && device.label.includes('flash'));
-
-    console.log('可用的摄像头:', videoInputs);
-
-    // 先尝试最简单的配置
-    let constraints: MediaTrackConstraints = {
-      width: { ideal: 1280 },
-      height: { ideal: 720 },
+    const constraints = {
+      video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'environment' },
+      audio: false,
     };
 
-    // 如果有多个摄像头，优先使用用户选择的 facingMode
-    if (hasMultipleCameras.value) {
-      constraints.facingMode = currentFacingMode.value;
-    }
+    streamRef.value = await mediaDevices.getUserMedia(constraints);
+    console.log('获取到摄像头流');
 
-    console.log('使用的摄像头配置:', constraints);
+    phase.value = 'camera';
+    console.log('已切换到摄像头模式');
 
-    // 启动摄像头
-    streamRef.value = await mediaDevices.getUserMedia({
-      video: constraints,
-      audio: false,
-    });
-
-    console.log('摄像头流获取成功:', streamRef.value);
-
-    if (videoRef.value) {
+    if (videoRef.value && streamRef.value) {
       videoRef.value.srcObject = streamRef.value;
-
-      // 等待视频可以播放
       await new Promise<void>((resolve) => {
         if (videoRef.value) {
           videoRef.value.onloadedmetadata = () => {
-            console.log('视频元数据加载完成');
-            videoRef.value?.play().then(() => {
-              console.log('视频开始播放');
+            console.log('视频元数据:', videoRef.value?.videoWidth, 'x', videoRef.value?.videoHeight);
+            videoRef.value?.play().catch(() => {});
+            // 再等待更长时间确保videoWidth和videoHeight可用
+            setTimeout(() => {
+              console.log('等待后视频尺寸:', videoRef.value?.videoWidth, 'x', videoRef.value?.videoHeight);
               resolve();
-            }).catch((err) => {
-              console.error('视频播放失败:', err);
-              resolve();
-            });
+            }, 1000);
           };
-
-          // 超时处理，3秒后强制继续
+          // 超时保护
           setTimeout(() => {
-            console.log('超时，强制继续');
+            console.log('超时，继续执行');
             resolve();
           }, 3000);
         }
       });
-
-      showCamera.value = true;
-      isLoading.value = false;
-      console.log('showCamera 设置为 true');
     }
-  } catch (error: any) {
-    isLoading.value = false;
-    console.error('初始化摄像头失败:', error);
-
-    let errorMsg = '摄像头访问失败';
-    if (error.name === 'NotAllowedError') {
-      errorMsg = '请允许访问摄像头权限';
-    } else if (error.name === 'NotFoundError') {
-      errorMsg = '未找到摄像头设备';
-    } else if (error.name === 'NotReadableError') {
-      errorMsg = '摄像头被其他程序占用';
-    } else if (error.name === 'OverconstrainedError') {
-      errorMsg = '无法满足摄像头配置要求';
-    } else {
-      errorMsg = error.message || '摄像头访问失败';
-    }
-
-    ElMessage.error(errorMsg);
-    emit('cancel');
+  } catch (err: any) {
+    console.error('摄像头错误:', err);
+    alert(`无法启动摄像头: ${err.message}`);
+  } finally {
+    isStarting.value = false;
   }
 };
 
-// 拍照
-const takePhoto = async () => {
+const stopCamera = () => {
+  if (streamRef.value) {
+    streamRef.value.getTracks().forEach(track => track.stop());
+    streamRef.value = null;
+  }
+};
+
+// 完全按测试页面的方式实现capture()
+const capture = async () => {
+  console.log('=== 开始拍照 ===');
   if (!videoRef.value || !canvasRef.value) {
-    ElMessage.error('视频元素未就绪');
+    alert('摄像头未准备好');
     return;
   }
 
-  isTakingPhoto.value = true;
+  const video = videoRef.value;
+
+  // 等待videoWidth和videoHeight加载完成，最多等3秒
+  let waitCount = 0;
+  const maxWait = 30; // 30 * 100ms = 3秒
+  while (!video.videoWidth && waitCount < maxWait) {
+    console.log('等待videoWidth加载，已等:', waitCount * 100, 'ms');
+    await new Promise(resolve => setTimeout(resolve, 100));
+    waitCount++;
+  }
+
+  if (!video.videoWidth) {
+    console.log('video.videoWidth 为0，视频未就绪');
+    alert('摄像头还未完全就绪，请稍等1-2秒再试');
+    return;
+  }
+
+  isCapturing.value = true;
 
   try {
-    // 设置画布尺寸与视频一致
-    const videoWidth = videoRef.value.videoWidth;
-    const videoHeight = videoRef.value.videoHeight;
-    canvasRef.value.width = videoWidth;
-    canvasRef.value.height = videoHeight;
+    const canvas = canvasRef.value;
+    const ctx = canvas.getContext('2d');
 
-    // 绘制图片到画布
-    const context = canvasRef.value.getContext('2d');
-    if (context) {
-      context.drawImage(
-        videoRef.value,
-        0,
-        0,
-        videoWidth,
-        videoHeight
-      );
-
-      // 转换为Base64
-      photoData.value = canvasRef.value.toDataURL('image/jpeg', 0.8);
-      showCamera.value = false;
+    if (!ctx) {
+      alert('无法获取canvas上下文');
+      return;
     }
-  } catch (error: any) {
-    console.error('拍照失败:', error);
-    ElMessage.error('拍照失败');
+
+    console.log('videoWidth:', video.videoWidth);
+    console.log('videoHeight:', video.videoHeight);
+
+    // 直接使用测试页面的方式，设置画布和视频尺寸相同
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+
+    console.log('画布尺寸:', canvas.width, canvas.height);
+
+    // 最简单的绘制方法（测试页面的工作方式！）
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    console.log('直接绘制成功');
+
+    // 生成照片数据
+    photoData.value = canvas.toDataURL('image/jpeg', 0.8);
+    console.log('照片数据生成:', photoData.value.length, '字符');
+
+    // 切换到预览
+    phase.value = 'preview';
+    console.log('切换到预览阶段');
+    stopCamera();
+  } catch (err) {
+    console.error('拍照错误:', err);
+    alert('拍照失败');
   } finally {
-    isTakingPhoto.value = false;
+    isCapturing.value = false;
   }
 };
 
-// 重拍
 const retake = () => {
-  photoData.value = null;
-  showCamera.value = true;
+  photoData.value = '';
+  startCamera();
 };
 
-// 确认照片
 const confirm = () => {
   if (photoData.value) {
     emit('photo-taken', photoData.value);
-    stopCamera();
   }
 };
 
-// 取消
 const cancel = () => {
   stopCamera();
+  phase.value = 'idle';
+  photoData.value = '';
   emit('cancel');
 };
 
-// 停止摄像头
-const stopCamera = () => {
-  if (streamRef.value) {
-    streamRef.value.getTracks().forEach((track) => track.stop());
-    streamRef.value = null;
-  }
-  showCamera.value = false;
-  photoData.value = null;
+const openTestPage = () => {
+  // 打开测试页面，在新标签页
+  const testWindow = window.open('/camera-test.html', '_blank');
+
+  // 监听测试页面的消息
+  const handleMessage = (event: MessageEvent) => {
+    // 检查消息类型
+    if (event.data && event.data.type === 'photo-taken') {
+      console.log('收到测试页面的照片数据');
+      photoData.value = event.data.data;
+      phase.value = 'preview';
+      stopCamera();
+
+      // 移除事件监听
+      window.removeEventListener('message', handleMessage);
+
+      // 关闭测试页面
+      if (testWindow) {
+        testWindow.close();
+      }
+    }
+  };
+
+  // 添加事件监听
+  window.addEventListener('message', handleMessage);
+
+  // 超时保护：30秒后移除事件监听
+  setTimeout(() => {
+    window.removeEventListener('message', handleMessage);
+  }, 30000);
 };
 
-// 切换摄像头
-const toggleCamera = async () => {
-  currentFacingMode.value = currentFacingMode.value === 'user' ? 'environment' : 'user';
-  videoConstraints.value.facingMode = currentFacingMode.value;
-  await stopCamera();
-  await initializeCamera();
-};
-
-// 切换闪光灯
-const switchFlash = async () => {
-  if (!streamRef.value) return;
-
-  const videoTrack = streamRef.value.getVideoTracks()[0];
-  if (!videoTrack) return;
-
-  flashEnabled.value = !flashEnabled.value;
-  try {
-    await videoTrack.applyConstraints({
-      advanced: [{ torch: flashEnabled.value }],
-    });
-  } catch (error) {
-    console.error('切换闪光灯失败:', error);
-    ElMessage.error('设备不支持闪光灯控制');
-    flashEnabled.value = !flashEnabled.value;
-  }
-};
-
-// 上传图片
-const uploadImage = () => {
+const triggerUpload = () => {
   fileInputRef.value?.click();
 };
 
-// 处理文件选择
-const handleFileSelect = (event: Event) => {
-  const target = event.target as HTMLInputElement;
+const handleFileSelect = (e: Event) => {
+  const target = e.target as HTMLInputElement;
   const file = target.files?.[0];
 
   if (file) {
     const reader = new FileReader();
-    reader.onload = (e) => {
-      const dataURL = e.target?.result as string;
-      photoData.value = dataURL;
-      showCamera.value = false;
+    reader.onload = (event) => {
+      photoData.value = event.target?.result as string;
+      phase.value = 'preview';
+      stopCamera();
     };
     reader.readAsDataURL(file);
   }
-
-  // 重置input值，以便选择相同文件时也能触发change事件
   target.value = '';
 };
-
-// 组件挂载时初始化摄像头
-onMounted(() => {
-  initializeCamera();
-});
-
-// 组件卸载时停止摄像头
-onUnmounted(() => {
-  stopCamera();
-});
 </script>
 
 <style scoped>
-.camera-container {
-  position: relative;
+.camera-wrapper {
   width: 100%;
-  height: 100%;
-  max-width: 600px;
+  max-width: 500px;
   margin: 0 auto;
-  background-color: #000;
+  background: #000;
   border-radius: 8px;
   overflow: hidden;
 }
 
-.camera-view {
+.debug-bar {
+  background: #333;
+  color: #fff;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.camera-main {
   position: relative;
-  width: 100%;
-  height: 60vh;
-  min-height: 300px;
-  max-height: 500px;
+  min-height: 400px;
   display: flex;
-  justify-content: center;
-  align-items: center;
-  background-color: #000;
+  flex-direction: column;
 }
 
-.camera-video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  transform: scaleX(-1); /* 水平翻转，像镜子一样 */
+.hidden {
+  display: none !important;
 }
 
-.camera-canvas {
-  display: none;
+.debug-canvas {
+  position: absolute;
+  top: -9999px;
+  left: -9999px;
 }
 
-/* 加载覆盖层 */
-.loading-overlay {
+.debug-info {
   position: absolute;
   top: 0;
   left: 0;
   right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
+  background: rgba(0, 0, 0, 0.8);
+  color: #0f0;
+  padding: 8px;
+  font-size: 11px;
+  font-family: monospace;
+  z-index: 100;
+}
+
+/* 空闲界面 */
+.idle-screen {
+  flex: 1;
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  z-index: 10;
-  color: #fff;
+  justify-content: center;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
 }
 
-.loading-icon {
-  font-size: 48px;
-  margin-bottom: 16px;
-  animation: rotating 2s linear infinite;
+.idle-content {
+  text-align: center;
+  padding: 40px 20px;
+  color: white;
 }
 
-@keyframes rotating {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+.camera-icon {
+  font-size: 64px;
+  margin-bottom: 20px;
 }
 
-.loading-overlay p {
+.idle-content p {
+  margin-bottom: 30px;
   font-size: 16px;
 }
 
-/* 调试信息 */
-.debug-info {
-  margin-bottom: 10px;
-}
 
-.debug-alert {
-  margin-bottom: 10px;
-}
-
-.debug-alert :deep(.el-alert__content) {
-  font-size: 12px;
-}
-
-.debug-alert p {
-  margin: 5px 0;
-  font-size: 12px;
-}
-
-.photo-preview {
-  position: relative;
-  width: 100%;
-  height: 60vh;
-  min-height: 300px;
-  max-height: 500px;
+.divider {
   display: flex;
-  flex-direction: column;
-  justify-content: center;
   align-items: center;
-  background-color: #000;
+  margin: 20px 0;
+  color: rgba(255,255,255,0.7);
 }
 
-.preview-image {
+.divider::before,
+.divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: rgba(255,255,255,0.3);
+}
+
+.divider span {
+  padding: 0 15px;
+}
+
+.photo-btn {
+  display: block;
+  width: 220px;
+  margin: 0 auto 15px;
+  padding: 16px 32px;
+  background: #409EFF;
+  color: white;
+  border: 2px solid #409EFF;
+  border-radius: 30px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.photo-btn:hover {
+  background: #66b1ff;
+  border-color: #66b1ff;
+}
+
+.upload-btn {
+  display: block;
+  width: 220px;
+  margin: 0 auto 15px;
+  padding: 16px 32px;
+  background: rgba(255, 255, 255, 0.2);
+  color: white;
+  border: 2px solid white;
+  border-radius: 30px;
+  font-size: 16px;
+  font-weight: bold;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.hint {
+  margin-top: 20px;
+  padding: 12px;
+  background: rgba(255, 193, 7, 0.2);
+  border: 1px solid rgba(255, 193, 7, 0.5);
+  border-radius: 8px;
+  font-size: 13px;
+  color: #fff3cd;
   max-width: 100%;
-  max-height: 80%;
-  object-fit: contain;
 }
 
-.preview-controls {
-  margin-top: 16px;
-  display: flex;
-  gap: 8px;
+/* 摄像头界面 */
+.camera-screen {
+  flex: 1;
+  position: relative;
+  background: #000;
+}
+
+.camera-video {
+  width: 100%;
+  height: 400px;
+  display: block;
+  object-fit: cover;
 }
 
 .camera-controls {
@@ -474,93 +451,103 @@ onUnmounted(() => {
   bottom: 0;
   left: 0;
   right: 0;
-  padding: 16px;
-  background: linear-gradient(to top, rgba(0, 0, 0, 0.8), transparent);
-}
-
-.top-controls {
+  padding: 20px;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 16px;
+  background: linear-gradient(to top, rgba(0,0,0,0.8), transparent);
 }
 
-.bottom-controls {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.camera-switch,
-.cancel-button,
-.upload-button,
-.flash-button {
-  color: #fff;
+.cancel-btn {
+  padding: 10px 20px;
+  background: rgba(255,255,255,0.2);
+  color: white;
+  border: 1px solid rgba(255,255,255,0.3);
+  border-radius: 20px;
   font-size: 14px;
+  cursor: pointer;
 }
 
-.take-photo-button {
-  width: 60px;
-  height: 60px;
+.capture-btn {
+  width: 70px;
+  height: 70px;
   border-radius: 50%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 0;
+  background: #fff;
+  border: 4px solid rgba(255,255,255,0.3);
   font-size: 16px;
   font-weight: bold;
+  color: #333;
+  cursor: pointer;
 }
 
-.file-input {
-  display: none;
+.capture-btn:disabled {
+  opacity: 0.5;
 }
 
-/* 响应式设计 */
-@media (max-width: 768px) {
-  .camera-container {
+/* 预览界面 */
+.preview-screen {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  min-height: 400px;
+  position: relative;
+}
+
+.preview-img {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #111;
+  display: block;
+  min-height: 300px;
+}
+
+.preview-controls {
+  padding: 20px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  background: #222;
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: linear-gradient(to top, rgba(34, 34, 34, 0.9), transparent);
+  padding-bottom: 25px;
+}
+
+.retake-btn,
+.confirm-btn {
+  padding: 12px 30px;
+  border-radius: 25px;
+  font-size: 16px;
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.retake-btn {
+  background: rgba(102, 102, 102, 0.9);
+  color: white;
+}
+
+.confirm-btn {
+  background: rgba(103, 194, 58, 0.9);
+  color: white;
+}
+
+@media (max-width: 600px) {
+  .camera-wrapper {
     border-radius: 0;
+    max-width: 100%;
   }
 
-  .camera-view,
-  .photo-preview {
-    height: 70vh;
-    min-height: 250px;
-  }
-
-  .camera-controls {
-    padding: 12px;
-  }
-
-  .take-photo-button {
-    width: 50px;
-    height: 50px;
-  }
-
-  .camera-switch,
-  .cancel-button,
-  .upload-button,
-  .flash-button {
-    font-size: 12px;
-    padding: 6px 8px;
-  }
-
-  .preview-controls {
-    flex-direction: column;
-    gap: 8px;
-  }
-}
-
-@media (max-width: 480px) {
-  .camera-view,
-  .photo-preview {
-    height: 60vh;
-    min-height: 200px;
-  }
-
-  .take-photo-button {
-    width: 45px;
-    height: 45px;
-    font-size: 14px;
+  .camera-main,
+  .camera-video {
+    min-height: 350px;
   }
 }
 </style>
