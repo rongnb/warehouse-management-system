@@ -209,7 +209,7 @@ router.post('/:id/submit', auth, async (req, res) => {
   }
 });
 
-// 核实盘库单（直接完成，不需要双人审核）
+// 核实盘库单 - 双人核实，只要不是发起人即可
 router.post('/:id/confirm', auth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -224,56 +224,77 @@ router.post('/:id/confirm', auth, async (req, res) => {
       return res.status(400).json({ message: '盘库单不在核实状态' });
     }
 
-    // 直接完成盘库
-    stocktake.firstConfirmedBy = req.user._id;
-    stocktake.firstConfirmedAt = new Date();
-    stocktake.firstConfirmedRemark = remark || '';
-    stocktake.status = 'completed';
-    stocktake.completedBy = req.user._id;
-    stocktake.completedAt = new Date();
-    stocktake.endTime = new Date();
+    // 检查是否是发起人本人
+    if (stocktake.createdBy.toString() === req.user._id.toString()) {
+      return res.status(400).json({ message: '发起人不能进行核实，请由其他管理员或仓管员核实' });
+    }
 
-    // 更新库存并生成出入库记录
-    const session = await mongoose.startSession();
-    session.startTransaction();
-
-    try {
-      for (const item of stocktake.items) {
-        if (item.difference !== 0) {
-          // 更新库存
-          await Inventory.findOneAndUpdate(
-            { product: item.product, warehouse: stocktake.warehouse },
-            { $inc: { quantity: item.difference, lastUpdated: new Date(), updatedBy: req.user._id } },
-            { session }
-          );
-
-          // 生成交易记录
-          const transactionType = item.difference > 0 ? 'stocktake_profit' : 'stocktake_loss';
-          const transaction = new Transaction({
-            transactionNo: `TR${Date.now()}`,
-            type: transactionType,
-            product: item.product,
-            warehouse: stocktake.warehouse,
-            quantity: Math.abs(item.difference),
-            price: item.unitPrice,
-            referenceNo: stocktake.stocktakeNo,
-            remark: `盘库${item.differenceType === 'profit' ? '盘盈' : '盘亏'}：${item.productName}`,
-            createdBy: req.user._id,
-            status: 'completed',
-          });
-          await transaction.save({ session });
-        }
+    // 双人核实逻辑
+    if (!stocktake.firstConfirmedBy) {
+      // 第一核实人（不是发起人即可）
+      stocktake.firstConfirmedBy = req.user._id;
+      stocktake.firstConfirmedAt = new Date();
+      stocktake.firstConfirmedRemark = remark || '';
+      await stocktake.save();
+      res.json({ message: '第一核实人确认成功，等待第二核实人确认' });
+    } else if (!stocktake.secondConfirmedBy) {
+      // 第二核实人：不能是发起人，也不能是第一核实人
+      if (stocktake.firstConfirmedBy.toString() === req.user._id.toString()) {
+        return res.status(400).json({ message: '第二核实人不能与第一核实人相同' });
       }
 
-      await session.commitTransaction();
-      session.endSession();
+      stocktake.secondConfirmedBy = req.user._id;
+      stocktake.secondConfirmedAt = new Date();
+      stocktake.secondConfirmedRemark = remark || '';
+      stocktake.status = 'completed';
+      stocktake.completedBy = req.user._id;
+      stocktake.completedAt = new Date();
+      stocktake.endTime = new Date();
 
-      await stocktake.save();
-      res.json({ message: '盘库已完成，库存已更新' });
-    } catch (error) {
-      await session.abortTransaction();
-      session.endSession();
-      throw error;
+      // 更新库存并生成出入库记录
+      const session = await mongoose.startSession();
+      session.startTransaction();
+
+      try {
+        for (const item of stocktake.items) {
+          if (item.difference !== 0) {
+            // 更新库存
+            await Inventory.findOneAndUpdate(
+              { product: item.product, warehouse: stocktake.warehouse },
+              { $inc: { quantity: item.difference, lastUpdated: new Date(), updatedBy: req.user._id } },
+              { session }
+            );
+
+            // 生成交易记录
+            const transactionType = item.difference > 0 ? 'stocktake_profit' : 'stocktake_loss';
+            const transaction = new Transaction({
+              transactionNo: `TR${Date.now()}`,
+              type: transactionType,
+              product: item.product,
+              warehouse: stocktake.warehouse,
+              quantity: Math.abs(item.difference),
+              price: item.unitPrice,
+              referenceNo: stocktake.stocktakeNo,
+              remark: `盘库${item.differenceType === 'profit' ? '盘盈' : '盘亏'}：${item.productName}`,
+              createdBy: req.user._id,
+              status: 'completed',
+            });
+            await transaction.save({ session });
+          }
+        }
+
+        await session.commitTransaction();
+        session.endSession();
+
+        await stocktake.save();
+        res.json({ message: '第二核实人确认成功，盘库完成，库存已更新' });
+      } catch (error) {
+        await session.abortTransaction();
+        session.endSession();
+        throw error;
+      }
+    } else {
+      return res.status(400).json({ message: '盘库单已完成核实' });
     }
   } catch (error) {
     res.status(500).json({ message: '核实盘库单失败', error: error.message });

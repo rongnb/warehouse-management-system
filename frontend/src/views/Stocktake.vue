@@ -102,6 +102,14 @@
             <el-button
               size="small"
               type="warning"
+              @click="handleConfirm(scope.row)"
+              v-if="scope.row.status === 'confirming'"
+            >
+              核实
+            </el-button>
+            <el-button
+              size="small"
+              type="warning"
               @click="handleExport(scope.row)"
               v-if="scope.row.status === 'completed'"
             >
@@ -251,12 +259,27 @@
             保存
           </el-button>
           <el-button type="success" @click="handleSubmit" v-if="form.status === 'draft' && form._id">
-            完成盘点
+            提交审核
           </el-button>
         </div>
       </template>
     </el-dialog>
 
+
+    <!-- 核实弹窗 -->
+    <el-dialog v-model="confirmDialogVisible" title="核实盘点单" width="500px">
+      <el-form :model="confirmForm" label-width="100px">
+        <el-form-item label="核实意见" required>
+          <el-input type="textarea" v-model="confirmForm.remark" placeholder="请输入核实意见" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="dialog-footer">
+          <el-button @click="confirmDialogVisible = false">取消</el-button>
+          <el-button type="primary" @click="confirmSubmit">确认核实</el-button>
+        </div>
+      </template>
+    </el-dialog>
 
     <!-- 取消弹窗 -->
     <el-dialog v-model="cancelDialogVisible" title="取消盘点单" width="500px">
@@ -316,6 +339,12 @@ const form = reactive({
 });
 
 
+const confirmDialogVisible = ref(false);
+const confirmForm = reactive({
+  id: '',
+  remark: '',
+});
+
 const cancelDialogVisible = ref(false);
 const cancelForm = reactive({
   id: '',
@@ -325,9 +354,11 @@ const cancelForm = reactive({
 // 获取仓库列表
 const getWarehouseList = async () => {
   try {
-    const res = await warehousesApi.getList({ page: 1, limit: 1000 });
+    const res = await warehousesApi.getOptions();
     warehouseList.value = res.data.warehouses;
+    console.log('📦 获取到的仓库列表:', warehouseList.value);
   } catch (error) {
+    console.error('获取仓库列表失败:', error);
     ElMessage.error('获取仓库列表失败');
   }
 };
@@ -490,23 +521,41 @@ const handleSubmit = async () => {
   }
 
   try {
-    await ElMessageBox.confirm('确定要完成该盘点单吗？完成后将直接更新库存。', '提示', {
+    await ElMessageBox.confirm('确定要提交该盘点单吗？提交后将进入核实流程，无法再编辑。', '提示', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning',
     });
 
-    // 先提交到核实状态
     await stocktakeApi.submit(form._id);
-    // 然后直接完成
-    await stocktakeApi.confirm(form._id, { remark: '直接完成盘点' });
-    ElMessage.success('盘点完成，库存已更新');
+    ElMessage.success('提交成功，等待核实');
     dialogVisible.value = false;
     getList();
   } catch (error) {
     if (error !== 'cancel') {
       ElMessage.error('提交失败');
     }
+  }
+};
+
+// 核实
+const handleConfirm = (row: any) => {
+  confirmForm.id = row._id;
+  confirmForm.remark = '';
+  confirmDialogVisible.value = true;
+};
+
+// 提交核实
+const confirmSubmit = async () => {
+  try {
+    const res = await stocktakeApi.confirm(confirmForm.id, {
+      remark: confirmForm.remark,
+    });
+    ElMessage.success(res.data.message);
+    confirmDialogVisible.value = false;
+    getList();
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.message || '核实失败');
   }
 };
 
