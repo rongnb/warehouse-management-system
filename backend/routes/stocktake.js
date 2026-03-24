@@ -209,7 +209,7 @@ router.post('/:id/submit', auth, async (req, res) => {
   }
 });
 
-// 核实盘库单 - 双人核实，只要不是发起人即可
+// 核实盘库单 - 双人核实，发起人可以作为第一核实人
 router.post('/:id/confirm', auth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -224,21 +224,16 @@ router.post('/:id/confirm', auth, async (req, res) => {
       return res.status(400).json({ message: '盘库单不在核实状态' });
     }
 
-    // 检查是否是发起人本人
-    if (stocktake.createdBy.toString() === req.user._id.toString()) {
-      return res.status(400).json({ message: '发起人不能进行核实，请由其他管理员或仓管员核实' });
-    }
-
     // 双人核实逻辑
     if (!stocktake.firstConfirmedBy) {
-      // 第一核实人（不是发起人即可）
+      // 第一核实人（发起人也可以）
       stocktake.firstConfirmedBy = req.user._id;
       stocktake.firstConfirmedAt = new Date();
       stocktake.firstConfirmedRemark = remark || '';
       await stocktake.save();
       res.json({ message: '第一核实人确认成功，等待第二核实人确认' });
     } else if (!stocktake.secondConfirmedBy) {
-      // 第二核实人：不能是发起人，也不能是第一核实人
+      // 第二核实人：不能是第一核实人
       if (stocktake.firstConfirmedBy.toString() === req.user._id.toString()) {
         return res.status(400).json({ message: '第二核实人不能与第一核实人相同' });
       }
