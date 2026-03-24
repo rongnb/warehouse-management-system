@@ -99,27 +99,19 @@
             >
               编辑
             </el-button>
-            <el-button 
-              size="small" 
-              type="success" 
-              @click="handleConfirm(scope.row)"
-              v-if="scope.row.status === 'confirming'"
-            >
-              核实
-            </el-button>
-            <el-button 
-              size="small" 
-              type="warning" 
+            <el-button
+              size="small"
+              type="warning"
               @click="handleExport(scope.row)"
               v-if="scope.row.status === 'completed'"
             >
               导出
             </el-button>
-            <el-button 
-              size="small" 
-              type="danger" 
+            <el-button
+              size="small"
+              type="danger"
               @click="handleCancel(scope.row)"
-              v-if="scope.row.status !== 'completed'"
+              v-if="['draft', 'confirming'].includes(scope.row.status)"
             >
               取消
             </el-button>
@@ -259,26 +251,12 @@
             保存
           </el-button>
           <el-button type="success" @click="handleSubmit" v-if="form.status === 'draft' && form._id">
-            提交审核
+            完成盘点
           </el-button>
         </div>
       </template>
     </el-dialog>
 
-    <!-- 核实弹窗 -->
-    <el-dialog v-model="confirmDialogVisible" title="核实盘点单" width="500px">
-      <el-form :model="confirmForm" label-width="100px">
-        <el-form-item label="核实意见">
-          <el-input type="textarea" v-model="confirmForm.remark" placeholder="请输入核实意见" :rows="3" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <div class="dialog-footer">
-          <el-button @click="confirmDialogVisible = false">取消</el-button>
-          <el-button type="primary" @click="confirmSubmit">确认核实</el-button>
-        </div>
-      </template>
-    </el-dialog>
 
     <!-- 取消弹窗 -->
     <el-dialog v-model="cancelDialogVisible" title="取消盘点单" width="500px">
@@ -337,11 +315,6 @@ const form = reactive({
   totalLossAmount: 0,
 });
 
-const confirmDialogVisible = ref(false);
-const confirmForm = reactive({
-  id: '',
-  remark: '',
-});
 
 const cancelDialogVisible = ref(false);
 const cancelForm = reactive({
@@ -515,16 +488,19 @@ const handleSubmit = async () => {
     ElMessage.error('请先保存盘点单');
     return;
   }
-  
+
   try {
-    await ElMessageBox.confirm('确定要提交该盘点单吗？提交后将进入核实流程，无法再编辑。', '提示', {
+    await ElMessageBox.confirm('确定要完成该盘点单吗？完成后将直接更新库存。', '提示', {
       confirmButtonText: '确定',
       cancelButtonText: '取消',
       type: 'warning',
     });
-    
+
+    // 先提交到核实状态
     await stocktakeApi.submit(form._id);
-    ElMessage.success('提交成功，等待核实');
+    // 然后直接完成
+    await stocktakeApi.confirm(form._id, { remark: '直接完成盘点' });
+    ElMessage.success('盘点完成，库存已更新');
     dialogVisible.value = false;
     getList();
   } catch (error) {
@@ -534,26 +510,6 @@ const handleSubmit = async () => {
   }
 };
 
-// 核实
-const handleConfirm = (row: any) => {
-  confirmForm.id = row._id;
-  confirmForm.remark = '';
-  confirmDialogVisible.value = true;
-};
-
-// 提交核实
-const confirmSubmit = async () => {
-  try {
-    const res = await stocktakeApi.confirm(confirmForm.id, {
-      remark: confirmForm.remark,
-    });
-    ElMessage.success(res.data.message);
-    confirmDialogVisible.value = false;
-    getList();
-  } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || '核实失败');
-  }
-};
 
 // 取消
 const handleCancel = (row: any) => {

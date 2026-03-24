@@ -15,13 +15,17 @@ export class ImageRecognizer {
   private workerInitializing: boolean = false
 
   private readonly compressOptions = {
-    maxWidth: 1600,
-    maxHeight: 1200,
-    quality: 0.9
+    maxWidth: 800, // 降低最大宽度，减少处理时间
+    maxHeight: 600, // 降低最大高度，减少处理时间
+    quality: 0.7 // 降低质量，提高压缩率
   }
 
   constructor() {
     console.log('🏗️ ImageRecognizer实例已创建（OCR模式）')
+    // 构造函数中立即初始化Worker
+    this.initializeWorker().catch(error => {
+      console.error('❌ Worker预初始化失败:', error)
+    })
   }
 
   async initialize(): Promise<boolean> {
@@ -76,25 +80,25 @@ export class ImageRecognizer {
 
       console.log('✅ Worker创建成功，开始配置参数...')
 
-      // 配置Tesseract参数以提高多行文字识别率
+      // 配置Tesseract参数以提高识别速度
       await this.worker.setParameters({
-        // 页面分割模式：自动检测方向和脚本 + 自动页面分割
-        'tessedit_pageseg_mode': '1', // PSM.AUTO_OSD（更适合多行文字）
-        // OCR引擎模式：神经网络+传统引擎混合模式
-        'tessedit_ocr_engine_mode': '1',
-        // 取消字符白名单，允许识别所有字符
-        'tessedit_char_whitelist': '',
-        // 启用自动分页
-        'textord_auto_page': '1',
-        // 启用段落检测
-        'textord_parallelize': '1',
+        // 页面分割模式：快速模式，适合单行或少量文字
+        'tessedit_pageseg_mode': '7', // PSM.SINGLE_LINE（快速模式）
+        // OCR引擎模式：快速模式
+        'tessedit_ocr_engine_mode': '0', // OEM.TESSERACT_ONLY（传统引擎，更快）
+        // 字符白名单，只识别必要字符
+        'tessedit_char_whitelist': 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.',
+        // 禁用自动分页
+        'textord_auto_page': '0',
+        // 禁用段落检测
+        'textord_parallelize': '0',
         // 降低置信度阈值，接受更多可能的结果
-        'classify_min_confidence': '15',
-        // 启用多列文本检测
-        'textord_max_noise_size': '10',
+        'classify_min_confidence': '10',
+        // 优化噪声处理
+        'textord_max_noise_size': '5',
         // 优化中文识别
         'chi_sim_fix_space': '1',
-        'chi_sim_enable_dict_correction': '1'
+        'chi_sim_enable_dict_correction': '0' // 禁用字典校正，提高速度
       })
 
       console.log('✅ Tesseract参数配置完成')
@@ -144,23 +148,16 @@ export class ImageRecognizer {
         // 绘制原始图像
         ctx.drawImage(img, 0, 0, width, height)
 
-        // 图像预处理：增强文字对比度
+        // 简化预处理，只进行灰度化，提高速度
         const imageDataCtx = ctx.getImageData(0, 0, canvas.width, canvas.height)
         const data = imageDataCtx.data
 
-        // 灰度化 + 对比度增强
+        // 仅灰度化处理
         for (let i = 0; i < data.length; i += 4) {
           const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
-
-          // 对比度增强
-          const contrast = 1.2 // 对比度增强系数
-          const brightness = 10 // 亮度增强
-          let enhancedGray = (gray - 128) * contrast + 128 + brightness
-          enhancedGray = Math.max(0, Math.min(255, enhancedGray))
-
-          data[i] = enhancedGray
-          data[i + 1] = enhancedGray
-          data[i + 2] = enhancedGray
+          data[i] = gray
+          data[i + 1] = gray
+          data[i + 2] = gray
         }
 
         ctx.putImageData(imageDataCtx, 0, 0)
@@ -196,19 +193,19 @@ export class ImageRecognizer {
     }
 
     try {
-      console.log('🔤 开始OCR识别（中英文混合，多行文字优化）...')
+      console.log('🔤 开始OCR识别（极速模式）...')
 
-      // 优化识别参数
+      // 使用极速识别参数
       await this.worker.setParameters({
         'tessedit_write_params_to_file': 'false',
-        'preserve_interword_spaces': '0', // 允许合并空格，提高中文识别率
-        'textord_noise_rejwords': '', // 不拒绝任何单词
-        'textord_noise_count_limit': '200', // 进一步增加噪声容忍度
-        'textord_max_noise_size': '30', // 更大的噪声尺寸
-        'edges_max_noise_size': '30', // 边缘检测的噪声尺寸
-        'textord_min_xheight': '10', // 降低最小字高，允许识别更小的文字
-        'textord_min_line_skew': '-1.0', // 允许更大的倾斜角度
-        'textord_max_line_skew': '1.0' // 允许更大的倾斜角度
+        'preserve_interword_spaces': '1',
+        'textord_noise_rejwords': '1', // 启用噪声单词拒绝，提高速度
+        'textord_noise_count_limit': '20', // 减少噪声容忍度，提高速度
+        'textord_max_noise_size': '5', // 减小噪声尺寸
+        'edges_max_noise_size': '5', // 减小边缘检测的噪声尺寸
+        'textord_min_xheight': '15', // 提高最小字高，避免识别过小文字
+        'textord_min_line_skew': '-0.1', // 减小倾斜角度范围
+        'textord_max_line_skew': '0.1' // 减小倾斜角度范围
       })
 
       const ret = await this.worker.recognize(imageData)
@@ -221,15 +218,6 @@ export class ImageRecognizer {
         console.log('```')
         console.log(text)
         console.log('```')
-
-        // 显示详细信息
-        if (ret.data.blocks) {
-          console.log(`📊 字符置信度: ${JSON.stringify(ret.data.blocks.map((b: any) => ({
-            block: b.block_num,
-            text: b.text ? b.text.slice(0, 20) + (b.text.length > 20 ? '...' : '') : '',
-            confidence: b.confidence
-          })))}`)
-        }
       }
 
       return text
