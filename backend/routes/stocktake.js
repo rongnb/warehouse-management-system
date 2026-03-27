@@ -89,6 +89,21 @@ router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), as
       return res.status(400).json({ message: '仓库不存在' });
     }
 
+    // 显式生成stocktakeNo
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    const count = await Stocktake.countDocuments({
+      createdAt: {
+        $gte: new Date(year, month - 1, day),
+        $lt: new Date(year, month - 1, day + 1),
+      },
+    });
+
+    const stocktakeNo = `PD${year}${month}${day}${String(count + 1).padStart(4, '0')}`;
+
     // 获取该仓库所有库存
     const inventories = await Inventory.find({ warehouse })
       .populate('product', 'name sku spec unit price');
@@ -111,6 +126,7 @@ router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), as
     });
 
     const stocktake = new Stocktake({
+      stocktakeNo,
       title,
       warehouse,
       warehouseName: warehouseExists.name,
@@ -247,17 +263,17 @@ router.post('/:id/confirm', auth, async (req, res) => {
       stocktake.endTime = new Date();
 
       // 更新库存并生成出入库记录
-      const session = await mongoose.startSession();
-      session.startTransaction();
-
       try {
         for (const item of stocktake.items) {
           if (item.difference !== 0) {
             // 更新库存
             await Inventory.findOneAndUpdate(
               { product: item.product, warehouse: stocktake.warehouse },
-              { $inc: { quantity: item.difference, lastUpdated: new Date(), updatedBy: req.user._id } },
-              { session }
+              {
+                $inc: { quantity: item.difference },
+                lastUpdated: new Date(),
+                updatedBy: req.user._id
+              }
             );
 
             // 生成交易记录
@@ -269,23 +285,20 @@ router.post('/:id/confirm', auth, async (req, res) => {
               warehouse: stocktake.warehouse,
               quantity: Math.abs(item.difference),
               price: item.unitPrice,
+              unitPrice: item.unitPrice,
               referenceNo: stocktake.stocktakeNo,
               remark: `盘库${item.differenceType === 'profit' ? '盘盈' : '盘亏'}：${item.productName}`,
+              operator: req.user._id,
               createdBy: req.user._id,
               status: 'completed',
             });
-            await transaction.save({ session });
+            await transaction.save();
           }
         }
-
-        await session.commitTransaction();
-        session.endSession();
 
         await stocktake.save();
         res.json({ message: '第二核实人确认成功，盘库完成，库存已更新' });
       } catch (error) {
-        await session.abortTransaction();
-        session.endSession();
         throw error;
       }
     } else {
