@@ -93,6 +93,22 @@ const transactionSchema = new mongoose.Schema({
     type: String,
     default: '',
   },
+  // 领用相关字段（用于出库）
+  consumptionUnit: {
+    type: String,
+    default: '',
+  },
+  consumptionApprover: {
+    type: String,
+    default: '',
+  },
+  consumptionHandler: {
+    type: String,
+    default: '',
+  },
+  consumptionDate: {
+    type: Date,
+  },
 }, {
   timestamps: true,
 });

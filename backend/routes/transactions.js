@@ -216,7 +216,11 @@ async function handleOutbound(req, res) {
       product,
       warehouse,
       price,
-      customer
+      customer,
+      consumptionUnit,
+      consumptionApprover,
+      consumptionHandler,
+      consumptionDate
     } = req.body;
 
     const finalProduct = productId || product;
@@ -245,6 +249,10 @@ async function handleOutbound(req, res) {
       operator: req.user._id,
       createdBy: req.user._id,
       status: 'completed',
+      consumptionUnit,
+      consumptionApprover,
+      consumptionHandler,
+      consumptionDate,
     });
 
     await transaction.save();
@@ -420,6 +428,53 @@ router.put('/:id/cancel', auth, requireRole(['admin', 'manager']), async (req, r
 
 router.post('/:id/cancel', auth, requireRole(['admin', 'manager']), async (req, res) => {
   return handleCancel(req, res);
+});
+
+// 更新交易记录
+router.put('/:id', auth, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const {
+      productId,
+      warehouseId,
+      quantity,
+      unitPrice,
+      remark,
+      customer,
+      consumptionUnit,
+      consumptionApprover,
+      consumptionHandler,
+      consumptionDate
+    } = req.body;
+
+    const transaction = await Transaction.findById(id);
+    if (!transaction) {
+      return res.status(404).json({ message: '交易记录不存在' });
+    }
+
+    // 更新基本信息
+    if (productId) transaction.product = productId;
+    if (warehouseId) transaction.warehouse = warehouseId;
+    if (quantity !== undefined) transaction.quantity = quantity;
+    if (unitPrice !== undefined) transaction.unitPrice = unitPrice;
+    if (remark !== undefined) transaction.remark = remark;
+    if (customer !== undefined) transaction.customer = customer;
+    // 更新领用相关字段
+    if (consumptionUnit !== undefined) transaction.consumptionUnit = consumptionUnit;
+    if (consumptionApprover !== undefined) transaction.consumptionApprover = consumptionApprover;
+    if (consumptionHandler !== undefined) transaction.consumptionHandler = consumptionHandler;
+    if (consumptionDate !== undefined) transaction.consumptionDate = consumptionDate;
+
+    await transaction.save();
+    await transaction.populate('product warehouse', 'name sku unit');
+
+    res.json({
+      message: '更新成功',
+      transaction,
+    });
+  } catch (error) {
+    res.status(500).json({ message: '更新失败', error: error.message });
+  }
 });
 
 // 获取最近交易记录

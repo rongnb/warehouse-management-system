@@ -342,7 +342,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Search, Refresh } from '@element-plus/icons-vue';
 import { stocktakeApi } from '@/api/stocktake';
 import { warehousesApi } from '@/api/warehouses';
-// import * as XLSX from 'xlsx'; // 如需导出功能请先安装xlsx依赖：npm install xlsx
+import * as XLSX from 'xlsx';
 
 // 定义仓库类型
 interface Warehouse {
@@ -703,58 +703,58 @@ const handleExport = async (row: any) => {
   try {
     const res = await stocktakeApi.export(row._id);
     const data = res.data;
-    
-    // 构造Excel数据（需安装xlsx依赖后启用）
-    // const headers = [
-    //   'SKU', '商品名称', '规格', '单位', '系统库存', '实际库存', '差异', '差异类型', '单价', '差异金额', '备注'
-    // ];
-    
-    // const rows = data.items.map((item: any) => [
-    //   item.sku,
-    //   item.productName,
-    //   item.spec,
-    //   item.unit,
-    //   item.systemQuantity,
-    //   item.actualQuantity,
-    //   item.difference,
-    //   item.differenceType,
-    //   item.unitPrice,
-    //   item.totalAmount,
-    //   item.remark,
-    // ]);
-    
-    // // 汇总信息
-    // const summary = [
-    //   [],
-    //   ['盘点单号:', data.stocktakeNo],
-    //   ['盘点标题:', data.title],
-    //   ['仓库:', data.warehouseName],
-    //   ['状态:', getStatusText(data.status)],
-    //   ['开始时间:', formatDate(data.startTime)],
-    //   ['结束时间:', formatDate(data.endTime)],
-    //   ['总盘盈数量:', data.totalProfitQuantity],
-    //   ['总盘盈金额:', `¥${data.totalProfitAmount.toFixed(2)}`],
-    //   ['总盘亏数量:', data.totalLossQuantity],
-    //   ['总盘亏金额:', `¥${data.totalLossAmount.toFixed(2)}`],
-    //   ['第一核实人:', data.firstConfirmedBy || ''],
-    //   ['第一核实时间:', formatDate(data.firstConfirmedAt)],
-    //   ['第二核实人:', data.secondConfirmedBy || ''],
-    //   ['第二核实时间:', formatDate(data.secondConfirmedAt)],
-    //   ['创建人:', data.createdBy],
-    //   ['创建时间:', formatDate(data.createdAt)],
-    //   ['备注:', data.remark],
-    //   [],
-    //   headers,
-    //   ...rows,
-    // ];
-    
-    // const worksheet = XLSX.utils.aoa_to_sheet(summary);
-    // const workbook = XLSX.utils.book_new();
-    // XLSX.utils.book_append_sheet(workbook, worksheet, '盘库报表');
-    
-    // // 下载
-    // XLSX.writeFile(workbook, `${data.stocktakeNo}_${data.title}.xlsx`);
-    ElMessage.success('导出功能已触发，请先安装xlsx依赖：npm install xlsx');
+
+    // 构造Excel数据
+    const headers = [
+      'SKU', '商品名称', '规格', '单位', '系统库存', '实际库存', '差异', '差异类型', '单价', '差异金额', '备注'
+    ];
+
+    const rows = data.items.map((item: any) => [
+      item.sku,
+      item.productName,
+      item.spec,
+      item.unit,
+      item.systemQuantity,
+      item.actualQuantity,
+      item.difference,
+      item.differenceType,
+      item.unitPrice,
+      item.totalAmount,
+      item.remark,
+    ]);
+
+    // 汇总信息
+    const summary = [
+      [],
+      ['盘点单号:', data.stocktakeNo],
+      ['盘点标题:', data.title],
+      ['仓库:', data.warehouseName],
+      ['状态:', getStatusText(data.status)],
+      ['开始时间:', formatDate(data.startTime)],
+      ['结束时间:', formatDate(data.endTime)],
+      ['总盘盈数量:', data.totalProfitQuantity],
+      ['总盘盈金额:', `¥${data.totalProfitAmount.toFixed(2)}`],
+      ['总盘亏数量:', data.totalLossQuantity],
+      ['总盘亏金额:', `¥${data.totalLossAmount.toFixed(2)}`],
+      ['第一核实人:', data.firstConfirmedBy || ''],
+      ['第一核实时间:', formatDate(data.firstConfirmedAt)],
+      ['第二核实人:', data.secondConfirmedBy || ''],
+      ['第二核实时间:', formatDate(data.secondConfirmedAt)],
+      ['创建人:', data.createdBy],
+      ['创建时间:', formatDate(data.createdAt)],
+      ['备注:', data.remark],
+      [],
+      headers,
+      ...rows,
+    ];
+
+    const worksheet = XLSX.utils.aoa_to_sheet(summary);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '盘库报表');
+
+    // 下载
+    XLSX.writeFile(workbook, `${data.stocktakeNo}_${data.title}.xlsx`);
+    ElMessage.success('导出成功！');
   } catch (error) {
     ElMessage.error('导出失败');
   }

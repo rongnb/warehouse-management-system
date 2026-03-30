@@ -120,6 +120,11 @@
           </template>
         </el-table-column>
         <el-table-column prop="warehouseName" label="仓库" width="120" />
+        <!-- 领用信息列（仅出库显示） -->
+        <el-table-column prop="consumptionUnit" label="领用单位" width="120" v-if="searchForm.type === 'out'" />
+        <el-table-column prop="consumptionApprover" label="审批人" width="100" v-if="searchForm.type === 'out'" />
+        <el-table-column prop="consumptionHandler" label="经办人" width="100" v-if="searchForm.type === 'out'" />
+        <el-table-column prop="consumptionDate" label="领用日期" width="120" v-if="searchForm.type === 'out'" />
         <el-table-column prop="status" label="状态" width="100" align="center">
           <template #default="{ row }">
             <el-tag :type="getStatusType(row.status)">
@@ -235,6 +240,48 @@
               />
             </el-form-item>
           </el-col>
+          <!-- 领用相关字段（仅出库显示） -->
+          <template v-if="!isInbound">
+            <el-col :span="12">
+              <el-form-item label="领用单位" prop="consumptionUnit">
+                <el-input
+                  v-model="form.consumptionUnit"
+                  placeholder="请输入领用单位"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="领用时间" prop="consumptionDate">
+                <el-date-picker
+                  v-model="form.consumptionDate"
+                  type="date"
+                  placeholder="请选择领用日期"
+                  format="YYYY-MM-DD"
+                  value-format="YYYY-MM-DD"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="单位审批人" prop="consumptionApprover">
+                <el-input
+                  v-model="form.consumptionApprover"
+                  placeholder="请输入单位审批人"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="领用经办人" prop="consumptionHandler">
+                <el-input
+                  v-model="form.consumptionHandler"
+                  placeholder="请输入领用经办人"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+          </template>
           <el-col :span="24">
             <el-form-item label="备注" prop="remark">
               <el-input
@@ -357,6 +404,11 @@ const form = reactive({
   unitPrice: 0,
   remark: '',
   type: 'in',
+  // 领用相关字段
+  consumptionUnit: '',
+  consumptionApprover: '',
+  consumptionHandler: '',
+  consumptionDate: null,
 });
 
 const cancelForm = reactive({
@@ -454,6 +506,10 @@ const handleCreateInbound = () => {
     unitPrice: 0,
     remark: '',
     type: 'in',
+    consumptionUnit: '',
+    consumptionApprover: '',
+    consumptionHandler: '',
+    consumptionDate: null,
   });
   dialogVisible.value = true;
 };
@@ -469,6 +525,10 @@ const handleCreateOutbound = () => {
     unitPrice: 0,
     remark: '',
     type: 'out',
+    consumptionUnit: '',
+    consumptionApprover: '',
+    consumptionHandler: '',
+    consumptionDate: new Date(),
   });
   dialogVisible.value = true;
 };
@@ -488,6 +548,10 @@ const handleEdit = (row: any) => {
     unitPrice: row.unitPrice,
     remark: row.remark,
     type: row.type,
+    consumptionUnit: row.consumptionUnit || '',
+    consumptionApprover: row.consumptionApprover || '',
+    consumptionHandler: row.consumptionHandler || '',
+    consumptionDate: row.consumptionDate || null,
   });
   dialogVisible.value = true;
 };
