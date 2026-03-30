@@ -329,6 +329,59 @@
       </template>
     </el-dialog>
 
+    <!-- 详情查看弹窗 -->
+    <el-dialog
+      v-model="detailDialogVisible"
+      title="交易详情"
+      width="700px"
+      destroy-on-close
+    >
+      <el-descriptions :column="2" border>
+        <el-descriptions-item label="交易号">{{ detail.transactionNo }}</el-descriptions-item>
+        <el-descriptions-item label="类型">
+          <el-tag :type="detail.type === 'in' ? 'success' : 'danger'">
+            {{ detail.type === 'in' ? '入库' : '出库' }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="商品名称">{{ detail.productName }}</el-descriptions-item>
+        <el-descriptions-item label="SKU">{{ detail.sku }}</el-descriptions-item>
+        <el-descriptions-item label="规格">{{ detail.spec }}</el-descriptions-item>
+        <el-descriptions-item label="单位">{{ detail.unit }}</el-descriptions-item>
+        <el-descriptions-item label="仓库">{{ detail.warehouseName }}</el-descriptions-item>
+        <el-descriptions-item label="数量">{{ detail.quantity }}</el-descriptions-item>
+        <el-descriptions-item label="单价">¥{{ detail.unitPrice?.toFixed(2) || '0.00' }}</el-descriptions-item>
+        <el-descriptions-item label="总金额">¥{{ detail.totalAmount?.toFixed(2) || '0.00' }}</el-descriptions-item>
+
+        <!-- 领用信息（仅出库显示） -->
+        <template v-if="detail.type === 'out' && detail.consumptionUnit">
+          <el-descriptions-item label="领用单位">{{ detail.consumptionUnit }}</el-descriptions-item>
+          <el-descriptions-item label="领用日期">{{ formatDate(detail.consumptionDate) }}</el-descriptions-item>
+          <el-descriptions-item label="单位审批人">{{ detail.consumptionApprover }}</el-descriptions-item>
+          <el-descriptions-item label="领用经办人">{{ detail.consumptionHandler }}</el-descriptions-item>
+        </template>
+
+        <el-descriptions-item label="状态">
+          <el-tag :type="getStatusType(detail.status)">
+            {{ getStatusText(detail.status) }}
+          </el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="创建人">{{ detail.createdBy }}</el-descriptions-item>
+        <el-descriptions-item label="创建时间">{{ formatDate(detail.createdAt) }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.auditBy" label="审核人">{{ detail.auditBy?.realName || detail.auditBy }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.auditTime" label="审核时间">{{ formatDate(detail.auditTime) }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.auditRemark" label="审核备注" :span="2">{{ detail.auditRemark }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail.remark" label="备注" :span="2">{{ detail.remark }}</el-descriptions-item>
+      </el-descriptions>
+
+      <template #footer>
+        <el-button @click="detailDialogVisible = false">关闭</el-button>
+        <el-button type="primary" @click="handleEdit(detail)" v-if="!isCompletedOrCancelled(detail.status)">
+          <el-icon><Edit /></el-icon>
+          编辑
+        </el-button>
+      </template>
+    </el-dialog>
+
     <!-- 图像识别弹窗 -->
     <el-dialog
       v-model="showImageRecognition"
@@ -382,6 +435,30 @@ const tableData = ref([]);
 const products = ref([]);
 const warehouses = ref([]);
 const dateRange = ref([]);
+const detailDialogVisible = ref(false);
+const detail = reactive<any>({
+  transactionNo: '',
+  type: '',
+  productName: '',
+  sku: '',
+  spec: '',
+  unit: '',
+  warehouseName: '',
+  quantity: 0,
+  unitPrice: 0,
+  totalAmount: 0,
+  consumptionUnit: '',
+  consumptionApprover: '',
+  consumptionHandler: '',
+  consumptionDate: null,
+  status: '',
+  createdBy: '',
+  createdAt: null,
+  auditBy: '',
+  auditTime: null,
+  auditRemark: '',
+  remark: '',
+});
 
 const searchForm = reactive({
   transactionNo: '',
@@ -479,6 +556,24 @@ const getStatusText = (status: string) => {
   return textMap[status] || status;
 };
 
+// 格式化日期
+const formatDate = (date: any) => {
+  if (!date) return '-';
+  const d = new Date(date);
+  return d.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+// 判断是否已完成或已取消（不可编辑）
+const isCompletedOrCancelled = (status: string) => {
+  return ['completed', 'cancelled'].includes(status);
+};
+
 const handleSearch = () => {
   pagination.page = 1;
   loadTransactions();
@@ -533,8 +628,44 @@ const handleCreateOutbound = () => {
   dialogVisible.value = true;
 };
 
-const handleView = (row: any) => {
-  ElMessage.info('查看功能开发中');
+const handleView = async (row: any) => {
+  try {
+    loading.value = true;
+    const res = await transactionsApi.getDetail(row.id);
+    const data = res.data.transaction;
+
+    // 填充详情数据
+    Object.assign(detail, {
+      id: data._id || data.id,
+      transactionNo: data.transactionNo,
+      type: data.type,
+      productName: data.product?.name || data.productName,
+      sku: data.product?.sku || data.sku,
+      spec: data.product?.specification || data.spec,
+      unit: data.product?.unit || data.unit,
+      warehouseName: data.warehouse?.name || data.warehouseName,
+      quantity: data.quantity,
+      unitPrice: data.unitPrice || data.price,
+      totalAmount: data.totalAmount,
+      consumptionUnit: data.consumptionUnit || '',
+      consumptionApprover: data.consumptionApprover || '',
+      consumptionHandler: data.consumptionHandler || '',
+      consumptionDate: data.consumptionDate,
+      status: data.status,
+      createdBy: data.createdBy?.realName || data.createdBy,
+      createdAt: data.createdAt,
+      auditBy: data.auditBy,
+      auditTime: data.auditTime,
+      auditRemark: data.auditRemark || '',
+      remark: data.remark || '',
+    });
+
+    detailDialogVisible.value = true;
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.message || '加载详情失败');
+  } finally {
+    loading.value = false;
+  }
 };
 
 const handleEdit = (row: any) => {
