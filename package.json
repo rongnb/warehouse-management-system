@@ -17,6 +17,7 @@
   ],
   "author": "rongnb",
   "license": "ISC",
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
 }

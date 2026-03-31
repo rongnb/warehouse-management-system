@@ -249,12 +249,12 @@ router.get('/recent-outbound', auth, async (req, res) => {
     // 格式化数据，只取每个商品最近3笔出库记录
     const formatted = result.map(item => {
       // 按创建时间降序排序，取最近3笔
-      const sortedOutbound = item.allOutbound.sort((a: any, b: any) =>
+      const sortedOutbound = item.allOutbound.sort((a, b) =>
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       ).slice(0, 3);
 
       // 格式化日期
-      const recentOutbound = sortedOutbound.map((o: any) => ({
+      const recentOutbound = sortedOutbound.map((o) => ({
         quantity: o.quantity,
         consumptionUnit: o.consumptionUnit,
         date: o.consumptionDate

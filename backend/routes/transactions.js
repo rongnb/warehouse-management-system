@@ -516,7 +516,7 @@ router.get('/export', auth, async (req, res) => {
     } = req.query;
 
     // 构建查询条件
-    const query: any = {};
+    const query = {};
 
     if (transactionNo) {
       query.transactionNo = new RegExp(transactionNo, 'i');
