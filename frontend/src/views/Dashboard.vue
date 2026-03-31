@@ -141,8 +141,7 @@
           </template>
           <el-empty v-if="recentOutboundProducts.length === 0" description="暂无出库记录" />
           <el-table v-else :data="recentOutboundProducts" style="width: 100%" border stripe>
-            <el-table-column prop="productName" label="商品名称" min-width="180" />
-            <el-table-column prop="sku" label="SKU" width="140" />
+            <el-table-column prop="productName" label="商品" min-width="200" />
             <el-table-column label="最近3笔出库" min-width="500">
               <template #default="{ row }">
                 <div v-if="row.recentOutbound.length === 0" class="text-gray">暂无出库记录</div>
@@ -155,7 +154,6 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column prop="totalOutbound" label="累计出库数量" width="140" align="center" />
           </el-table>
         </el-card>
       </el-col>
