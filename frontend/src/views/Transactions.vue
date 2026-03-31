@@ -81,6 +81,10 @@
             <el-icon><Refresh /></el-icon>
             重置
           </el-button>
+          <el-button type="success" @click="handleExport" :loading="exportLoading">
+            <el-icon><Download /></el-icon>
+            导出Excel
+          </el-button>
         </el-form-item>
       </el-form>
     </el-card>
@@ -411,7 +415,8 @@ import {
   Edit,
   Delete,
   Camera,
-  Upload
+  Upload,
+  Download
 } from '@element-plus/icons-vue';
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -425,6 +430,7 @@ import { initializeImageRecognizer } from '@/utils/imageRecognition';
 const loading = ref(false);
 const submitLoading = ref(false);
 const cancelLoading = ref(false);
+const exportLoading = ref(false);
 const dialogVisible = ref(false);
 const cancelDialogVisible = ref(false);
 const showImageRecognition = ref(false);
@@ -732,6 +738,93 @@ const handleCancelSubmit = async () => {
     ElMessage.error(error.response?.data?.message || '取消失败');
   } finally {
     cancelLoading.value = false;
+  }
+};
+
+// 导出Excel
+const handleExport = async () => {
+  try {
+    exportLoading.value = true;
+    // 获取当前搜索条件下的所有数据导出
+    const params = {
+      transactionNo: searchForm.transactionNo,
+      productName: searchForm.productName,
+      type: searchForm.type,
+      status: searchForm.status,
+      startDate: dateRange.value?.[0] || null,
+      endDate: dateRange.value?.[1] || null,
+    };
+
+    const res = await transactionsApi.export(params);
+    const data = res.data;
+
+    // 构造Excel数据
+    const headers = [
+      '交易号', '类型', '商品名称', 'SKU', '规格', '单位', '仓库',
+      '数量', '单价', '总金额', '领用单位', '领用日期', '单位审批人',
+      '领用经办人', '状态', '创建人', '创建时间', '备注'
+    ];
+
+    const rows = data.map((item: any) => [
+      item.transactionNo,
+      item.type === 'in' ? '入库' : '出库',
+      item.productName,
+      item.sku,
+      item.spec || '-',
+      item.unit || '-',
+      item.warehouseName,
+      item.quantity,
+      item.unitPrice || 0,
+      item.totalAmount || 0,
+      item.consumptionUnit || '-',
+      item.consumptionDate ? new Date(item.consumptionDate).toLocaleDateString() : '-',
+      item.consumptionApprover || '-',
+      item.consumptionHandler || '-',
+      getStatusText(item.status),
+      item.createdBy,
+      item.createdAt ? new Date(item.createdAt).toLocaleString() : '-',
+      item.remark || '-',
+    ]);
+
+    const excelData = [headers, ...rows];
+    const worksheet = XLSX.utils.aoa_to_sheet(excelData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '出入库记录');
+
+    // 设置列宽
+    const colWidths = [
+      {wch: 20}, // 交易号
+      {wch: 6},  // 类型
+      {wch: 20}, // 商品名称
+      {wch: 15}, // SKU
+      {wch: 15}, // 规格
+      {wch: 8},  // 单位
+      {wch: 15}, // 仓库
+      {wch: 10}, // 数量
+      {wch: 12}, // 单价
+      {wch: 14}, // 总金额
+      {wch: 15}, // 领用单位
+      {wch: 12}, // 领用日期
+      {wch: 12}, // 单位审批人
+      {wch: 12}, // 领用经办人
+      {wch: 10}, // 状态
+      {wch: 10}, // 创建人
+      {wch: 20}, // 创建时间
+      {wch: 25}, // 备注
+    ];
+    worksheet['!cols'] = colWidths;
+
+    // 生成文件名
+    const timestamp = new Date().toISOString().slice(0, 10);
+    const filename = `出入库记录_${timestamp}.xlsx`;
+
+    // 下载
+    XLSX.writeFile(workbook, filename);
+    ElMessage.success('导出成功！');
+  } catch (error: any) {
+    ElMessage.error(error.response?.data?.message || '导出失败');
+  } finally {
+    exportLoading.value = false;
   }
 };
 

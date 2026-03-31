@@ -212,4 +212,69 @@ router.get('/category-stats', auth, async (req, res) => {
   }
 });
 
+// 获取每个商品最近3笔出库记录（包含领用单位信息）
+router.get('/recent-outbound', auth, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 50;
+
+    // 使用aggregate获取每个商品的出库记录，然后取最近3笔
+    const result = await Transaction.aggregate([
+      // 只匹配出库且已完成的
+      { $match: { type: 'out', status: 'completed' } },
+      // 按商品分组
+      { $group: {
+        _id: '$product',
+        totalOutbound: { $sum: '$quantity' },
+        allOutbound: { $push: {
+          quantity: '$quantity',
+          consumptionUnit: '$consumptionUnit',
+          consumptionDate: '$consumptionDate',
+          createdAt: '$createdAt',
+        } },
+      } },
+      // 按总出库数量降序排序
+      { $sort: { totalOutbound: -1 } },
+      // 只返回前N个商品
+      { $limit: limit },
+      // 关联商品信息
+      { $lookup: {
+        from: 'products',
+        localField: '_id',
+        foreignField: '_id',
+        as: 'productInfo',
+      } },
+      { $unwind: '$productInfo' },
+    ]);
+
+    // 格式化数据，只取每个商品最近3笔出库记录
+    const formatted = result.map(item => {
+      // 按创建时间降序排序，取最近3笔
+      const sortedOutbound = item.allOutbound.sort((a: any, b: any) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ).slice(0, 3);
+
+      // 格式化日期
+      const recentOutbound = sortedOutbound.map((o: any) => ({
+        quantity: o.quantity,
+        consumptionUnit: o.consumptionUnit,
+        date: o.consumptionDate
+          ? dayjs(o.consumptionDate).format('YYYY-MM-DD')
+          : dayjs(o.createdAt).format('YYYY-MM-DD'),
+      }));
+
+      return {
+        productId: item._id,
+        productName: item.productInfo.name,
+        sku: item.productInfo.sku,
+        totalOutbound: item.totalOutbound,
+        recentOutbound,
+      };
+    });
+
+    res.json({ products: formatted });
+  } catch (error) {
+    res.status(500).json({ message: '获取最近出库记录失败', error: error.message });
+  }
+});
+
 module.exports = router;
