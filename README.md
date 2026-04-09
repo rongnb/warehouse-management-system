@@ -8,7 +8,6 @@
 ---
 
 ## ✨ 功能特性
-
 ### 📦 核心业务功能
 | 模块 | 功能说明 |
 |------|----------|
@@ -98,7 +97,7 @@ chmod +x start.sh
 ```
 
 ### 🔹 Windows 系统
-
+### 🔹 第一次使用？
 #### 方案一：离线部署（推荐，内网环境零依赖）
 > 💡 完全不需要外网，所有依赖已打包在项目内
 
@@ -116,7 +115,7 @@ chmod +x start.sh
    ```batch
    双击运行 start-portable.bat
    ```
-   自动启动：MongoDB数据库 → 后端API服务 → 前端页面服务 → 自动打开浏览器
+   自动启动：MongoDB数据库 → 后端API服务 → 前端页面服务
 
 4. **访问系统**
    打开浏览器访问：http://localhost:5173
@@ -124,7 +123,7 @@ chmod +x start.sh
 #### 方案二：在线部署（有外网环境）
 1. **环境要求**
    - Node.js >= 18.0.0
-   - MongoDB >= 4.4（推荐使用4.4.x系列，稳定性最佳）
+   - MongoDB >= 4.4（推荐使用4.4.x系列，与便携版版本一致，稳定性最佳）
 
 2. **自动安装**
    ```batch
@@ -134,7 +133,7 @@ chmod +x start.sh
 
 3. **启动服务**
    ```batch
-   double-click start.bat
+   双击运行 start.bat
    ```
 
 ---
@@ -154,7 +153,7 @@ chmod +x start.sh
 # 按 Ctrl+C 停止所有服务
 ```
 
-### Windows 便携版（完全离线，无需安装服务）
+### 便携版启动/停止（完全离线，无需安装服务）
 ```batch
 # 启动所有服务
 双击 start-portable.bat
@@ -163,13 +162,25 @@ chmod +x start.sh
 双击 stop-portable.bat
 ```
 
-### Windows 常规版
+### 常规版启动/停止
 ```batch
 # 一键启动
 start.bat
 
 # 一键停止
 stop.bat
+
+# 单独启动后端
+backend-start.bat
+
+# 单独启动前端
+frontend-start.bat
+
+# 单独启动MongoDB
+mongodb-start.bat
+
+# 检查MongoDB状态
+mongodb-status.bat
 ```
 
 ---
@@ -271,8 +282,6 @@ warehouse-management-system/
 │   ├── server.js              # 后端入口文件
 │   └── package.json           # 后端依赖配置
 ├── frontend/                  # 前端应用代码
-│   ├── public/                # 静态资源
-│   │   └── camera-test.html     # 摄像头测试页面
 │   ├── src/
 │   │   ├── api/               # API接口封装
 │   │   │   └── ocr.ts          # 🆕 OCR识别API
@@ -289,7 +298,9 @@ warehouse-management-system/
 │   └── vite.config.ts         # Vite配置
 ├── electron-manager/           # 旧 Electron 图形启动器（保留但默认不用）
 ├── mongodb/                   # MongoDB便携版（可选，离线部署用）
+│   └── bin/                   # MongoDB可执行文件
 ├── database/                  # 数据库脚本
+│   └── init.js                # 初始化脚本（默认数据）
 ├── data/                      # 数据库数据目录（自动生成）
 ├── gui-start.py                # 🆕 Python Tkinter 图形化启动器
 ├── gui-start.sh                # 🆕 Linux 图形化启动脚本
@@ -298,7 +309,8 @@ warehouse-management-system/
 ├── *.bat                      # Windows 批处理脚本（启动、安装、管理等）
 ├── warehouse-manager.desktop   # 🆕 Linux 桌面入口文件
 ├── README.md                  # 本文档
-└── ...
+├── QUICKSTART.md              # 快速上手指南
+└── DEPLOY_INSTRUCTION.md      # 详细部署说明
 ```
 
 ---
@@ -314,23 +326,23 @@ A：
   3. 选择 `Enabled`，重启 Chrome 即可
 
 ### Q2：启动后无法访问页面？
-A：检查端口 5173 是否被占用，或修改 `frontend/vite.config.ts` 中的端口号。
+A：检查端口5173是否被占用，或修改 `frontend/vite.config.ts` 中的端口号。
 
 ### Q3：数据库连接失败？
 A：
-1. 检查 MongoDB 服务是否启动
-2. 确认 27017 端口没有被其他程序占用
-3. 便携版检查 `mongodb/bin/mongod` 是否存在
+1. 检查MongoDB服务是否启动，运行 `mongodb-status.bat` 查看状态
+2. 确认27017端口没有被其他程序占用
+3. 便携版检查 `mongodb/bin/mongod.exe` 是否存在
 
 ### Q4：忘记管理员密码？
-A：在图形化界面点击 **🔐 重置密码** 按钮，即可重置管理员密码为 `123456`。
-或者命令行运行 `node backend/reset-admin-password.js`。
+A：运行 `backend/reset-admin-password.bat` 可重置管理员密码为123456。
+在图形化界面中，直接点击"🔐 重置密码"按钮即可完成重置。
 
 ### Q5：如何修改服务端口？
 A：
 - 后端端口：修改 `backend/server.js` 中的端口配置
-- 前端端口：修改 `frontend/vite.config.ts` 中的 `server.port`
-- 数据库端口：修改 `backend/.env` 中的 `MONGODB_URI` 连接地址
+- 前端端口：修改 `frontend/vite.config.ts` 中的server.port
+- 数据库端口：修改 `backend/.env` 中的MONGODB_URI连接地址
 
 ### Q6：数据如何备份？
 A：直接拷贝整个 `data/db` 目录即可，所有数据都存在这个目录中，恢复时直接覆盖即可。
@@ -344,13 +356,12 @@ A：
 ---
 
 ## 📞 技术支持
-- 部署问题：参考本 README
-- 使用问题：参考系统内置的使用说明
-- 定制开发：联系开发者
+- 部署问题：检查DEPLOY_INSTRUCTION.md部署文档
+- 使用问题：参考系统内置的帮助中心
+- 定制开发：联系系统管理员
 
 ---
 
 ## 📄 许可证
 MIT License
-
 © 2024 企业内部使用
