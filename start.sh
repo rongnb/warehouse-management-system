@@ -35,6 +35,24 @@ if [ ! -d "frontend" ]; then
 fi
 echo "✅ 前端目录存在"
 
+# 安装后端依赖
+echo "📦 检查后端依赖..."
+cd backend
+
+# 检查 node_modules 是否存在且有读取权限
+if [ ! -d "node_modules" ] || [ ! -r "node_modules" ]; then
+    echo "🔧 安装后端依赖..."
+    npm install
+else
+    # 检查关键模块是否可以正常加载
+    node -e "require('mongoose')" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo "⚠️  依赖不完整，重新安装..."
+        npm install
+    fi
+fi
+cd ..
+
 # 检查 MongoDB 是否运行
 echo ""
 echo "🔍 检查 MongoDB 连接..."
@@ -61,11 +79,12 @@ if command -v nc &> /dev/null; then
 fi
 
 # 使用 mongoose 测试连接
+cd backend
 node -e "
 const mongoose = require('mongoose');
 const fs = require('fs');
 
-const envPath = './backend/.env';
+const envPath = './.env';
 let mongoUri = 'mongodb://localhost:27017/warehouse';
 
 if (fs.existsSync(envPath)) {
@@ -98,13 +117,6 @@ mongoose.connect(mongoUri, {
 });
 " || exit 1
 
-# 安装后端依赖
-echo "📦 安装后端依赖..."
-cd backend
-if [ ! -d "node_modules" ]; then
-    npm install
-fi
-
 # 启动后端服务
 echo "🚀 启动后端服务..."
 npm run dev &
@@ -116,10 +128,20 @@ cd ..
 sleep 3
 
 # 安装前端依赖
-echo "📦 安装前端依赖..."
+echo "📦 检查前端依赖..."
 cd frontend
-if [ ! -d "node_modules" ]; then
+
+# 检查 node_modules 是否存在且有读取权限
+if [ ! -d "node_modules" ] || [ ! -r "node_modules" ]; then
+    echo "🔧 安装前端依赖..."
     npm install
+else
+    # 检查关键模块是否可以正常加载
+    node -e "require('vite')" 2>/dev/null
+    if [ $? -ne 0 ]; then
+        echo "⚠️  依赖不完整，重新安装..."
+        npm install
+    fi
 fi
 
 # 启动前端服务
@@ -135,10 +157,44 @@ echo "=================================="
 echo "🌐 前端访问地址: http://localhost:5173"
 echo "🔧 后端接口地址: http://localhost:3000"
 echo ""
+
+# 获取局域网IP
+get_first_lan_ip() {
+  ip addr show 2>/dev/null | grep -E 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | cut -d'/' -f1 | head -1
+}
+
+LAN_IP=$(get_first_lan_ip)
+if [ -n "$LAN_IP" ]; then
+  echo "📡 局域网访问地址:"
+  echo "   前端: http://$LAN_IP:5173"
+  echo "   后端: http://$LAN_IP:3000"
+  echo ""
+fi
+
 echo "默认账号："
 echo "管理员: admin / 123456"
 echo "仓管员A: keeper_a / 123456"
 echo "仓管员B: keeper_b / 123456"
+echo ""
+
+# 等待前端启动
+sleep 2
+
+# 尝试自动打开浏览器
+OPEN_URL="http://localhost:5173"
+if [ -n "$LAN_IP" ]; then
+  OPEN_URL="http://$LAN_IP:5173"
+fi
+
+echo "🌐 正在打开浏览器: $OPEN_URL"
+if command -v xdg-open &> /dev/null; then
+  xdg-open "$OPEN_URL" &
+elif command -v open &> /dev/null; then
+  open "$OPEN_URL" &
+fi
+
+echo ""
+echo "如果浏览器没有自动打开，请手动访问上述地址"
 echo ""
 echo "按 Ctrl+C 停止所有服务"
 

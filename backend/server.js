@@ -44,6 +44,7 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/stocktake', require('./routes/stocktake'));
 app.use('/api/system', require('./routes/system'));
 app.use('/api/logs', require('./routes/logs'));
+app.use('/api/ocr', require('./routes/ocr'));
 
 // 错误处理中间件
 app.use((err, req, res, next) => {
@@ -68,6 +69,7 @@ app.use((req, res) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   logger.info(`服务器运行在 http://localhost:${PORT}`);
+  logger.info(`局域网访问地址: http://0.0.0.0:${PORT}`);
 });

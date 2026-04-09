@@ -69,9 +69,7 @@ export class ImageRecognizer {
     try {
       console.log('📦 开始创建Worker...')
 
-      // 使用本地语言包
       this.worker = await Tesseract.createWorker('chi_sim+eng', 1, {
-        langPath: '/tessdata/', // 使用本地public目录下的语言包
         logger: (m: any) => {
           const progress = m.progress ? Math.round(m.progress * 100) + '%' : ''
           console.log(`[Tesseract] ${m.status} ${progress}`)

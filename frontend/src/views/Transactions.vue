@@ -426,6 +426,7 @@ import { warehousesApi } from '@/api/warehouses';
 import ImageRecognitionComponent from '@/components/ImageRecognitionComponent.vue';
 import type { RecognitionResult } from '@/utils/imageRecognition';
 import { initializeImageRecognizer } from '@/utils/imageRecognition';
+import * as XLSX from 'xlsx';
 
 const loading = ref(false);
 const submitLoading = ref(false);
@@ -745,6 +746,14 @@ const handleCancelSubmit = async () => {
 const handleExport = async () => {
   try {
     exportLoading.value = true;
+
+    // 校验是否选择了日期范围，避免导出过多数据
+    if (!dateRange.value || dateRange.value.length !== 2 || !dateRange.value[0] || !dateRange.value[1]) {
+      ElMessage.warning('请先选择日期范围后再导出');
+      exportLoading.value = false;
+      return;
+    }
+
     // 获取当前搜索条件下的所有数据导出
     const params = {
       transactionNo: searchForm.transactionNo,
@@ -757,6 +766,11 @@ const handleExport = async () => {
 
     const res = await transactionsApi.export(params);
     const data = res.data;
+
+    if (!Array.isArray(data) || data.length === 0) {
+      ElMessage.warning('没有数据可导出');
+      return;
+    }
 
     // 构造Excel数据
     const headers = [
@@ -822,7 +836,14 @@ const handleExport = async () => {
     XLSX.writeFile(workbook, filename);
     ElMessage.success('导出成功！');
   } catch (error: any) {
-    ElMessage.error(error.response?.data?.message || '导出失败');
+    console.error('导出失败:', error);
+    let errorMessage = '导出失败';
+    if (error.response?.data?.message) {
+      errorMessage = error.response.data.message;
+    } else if (error.message) {
+      errorMessage = error.message;
+    }
+    ElMessage.error(errorMessage);
   } finally {
     exportLoading.value = false;
   }

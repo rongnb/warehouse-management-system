@@ -96,6 +96,12 @@ const statusText = computed(() => {
   return '';
 });
 
+const canUseCamera = (): boolean => {
+  // 始终返回 true，直接尝试启动
+  // 如果浏览器不允许，getUserMedia 调用会失败，我们会在 catch 中提示用户
+  return true;
+};
+
 const startCamera = async () => {
   if (isStarting.value) return;
   isStarting.value = true;
@@ -103,6 +109,14 @@ const startCamera = async () => {
   console.log('=== 开始启动摄像头 ===');
   console.log('协议:', window.location.protocol);
   console.log('主机:', window.location.hostname);
+
+  // 检查摄像头支持
+  if (!canUseCamera()) {
+    console.warn('摄像头不被支持:', window.location.protocol + '//' + window.location.hostname);
+    alert(`📷 摄像头无法启动\n\n原因：当前浏览器不支持摄像头API\n解决方法：\n1. 👉 使用【从相册选择图片】（推荐，此功能可用）\n2. 或更换现代浏览器\n\n从相册选择同样可以识别条形码和文字！`);
+    isStarting.value = false;
+    return;
+  }
 
   try {
     const mediaDevices = navigator.mediaDevices;
@@ -241,6 +255,13 @@ const cancel = () => {
 };
 
 const openTestPage = () => {
+  // 检查是否可以使用摄像头
+  if (!canUseCamera()) {
+    console.warn('摄像头不可用:', window.location.protocol + '//' + window.location.hostname);
+    alert(`📷 摄像头无法启动\n\n原因：当前浏览器不支持摄像头API\n解决方法：\n1. 👉 使用【从相册选择图片】（推荐，此功能可用）\n2. 或更换现代浏览器\n\n从相册选择同样可以识别条形码和文字！`);
+    return;
+  }
+
   // 打开测试页面，在新标签页
   const testWindow = window.open('/camera-test.html', '_blank');
 

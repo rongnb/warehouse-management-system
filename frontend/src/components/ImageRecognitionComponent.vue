@@ -157,8 +157,7 @@ import { ElMessage, ElForm, ElFormItem, ElInput, ElButton, ElDivider } from 'ele
 import type { FormInstance, FormRules } from 'element-plus';
 import { Loading, Refresh, EditPen, Check, Camera } from '@element-plus/icons-vue';
 import CameraComponent from './CameraComponent.vue';
-import { recognizeImage } from '@/utils/imageRecognition';
-import type { RecognitionResult } from '@/utils/imageRecognition';
+import { ocrApi, type RecognitionResult } from '@/api/ocr';
 
 // 接收属性
 const props = defineProps<{
@@ -207,7 +206,21 @@ const handlePhotoTaken = async (data: string) => {
   await performRecognition(data);
 };
 
-// 执行图像识别
+// 将base64转换为File对象
+function base64ToFile(base64: string, filename: string = 'image.jpg'): File {
+  // 去掉data:image/jpeg;base64,前缀
+  const arr = base64.split(',');
+  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mime });
+}
+
+// 执行图像识别 - 调用后端OCR API
 const performRecognition = async (imageData: string) => {
   try {
     // 模拟进度更新
@@ -217,9 +230,12 @@ const performRecognition = async (imageData: string) => {
       }
     }, 200);
 
-    // 执行识别
-    const { result } = await recognizeImage(imageData);
-    recognitionResult.value = result;
+    // 将base64图片转为File
+    const imageFile = base64ToFile(imageData, 'captured.jpg');
+
+    // 调用后端OCR API
+    const response = await ocrApi.recognize(imageFile);
+    recognitionResult.value = response.result;
 
     // 检查是否匹配到商品
     matchedProduct.value = findMatchingProduct(recognitionResult.value);
@@ -233,7 +249,7 @@ const performRecognition = async (imageData: string) => {
     }, 500);
   } catch (error: any) {
     console.error('图像识别失败:', error);
-    ElMessage.error('图像识别失败，请重试或手动输入');
+    ElMessage.error(error.message || '图像识别失败，请重试或手动输入');
     step.value = 'camera';
   }
 };

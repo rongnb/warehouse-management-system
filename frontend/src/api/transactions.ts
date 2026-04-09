@@ -61,7 +61,6 @@ export const transactionsApi = {
       url: '/transactions/export',
       method: 'get',
       params,
-      responseType: 'blob',
     })
   },
 

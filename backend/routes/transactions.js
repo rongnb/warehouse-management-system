@@ -97,6 +97,110 @@ router.get('/', auth, async (req, res) => {
   }
 });
 
+// 导出出入库记录（按条件搜索）
+router.get('/export', auth, async (req, res) => {
+  try {
+    const {
+      transactionNo,
+      productName,
+      type,
+      status,
+      startDate,
+      endDate,
+    } = req.query;
+
+    // 构建查询条件
+    const query = {};
+
+    if (transactionNo) {
+      query.transactionNo = new RegExp(transactionNo, 'i');
+    }
+    if (productName) {
+      // 需要通过product名称搜索，先查找匹配的产品
+      const products = await Product.find({
+        $or: [
+          { name: { $regex: productName, $options: 'i' } },
+          { sku: { $regex: productName, $options: 'i' } },
+        ]
+      }).select('_id');
+      query.product = { $in: products.map(p => p._id) };
+    }
+    if (type) {
+      query.type = type;
+    }
+    if (status) {
+      query.status = status;
+    }
+    if (startDate && endDate) {
+      query.createdAt = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      };
+    }
+
+    // 查询所有符合条件的记录，populate关联数据
+    const transactions = await Transaction.find(query)
+      .populate('product', 'name sku unit specification')
+      .populate('warehouse', 'name')
+      .populate('operator', 'realName')
+      .sort({ createdAt: -1 });
+
+    // 格式化数据
+    const formatted = transactions.map(t => ({
+      id: t._id,
+      transactionNo: t.transactionNo,
+      type: t.type,
+      productName: t.product?.name || '未知商品',
+      sku: t.product?.sku || '',
+      spec: t.product?.specification || '',
+      unit: t.product?.unit || '',
+      warehouseName: t.warehouse?.name || '未知仓库',
+      quantity: t.quantity,
+      unitPrice: t.unitPrice || t.price || 0,
+      totalAmount: (t.unitPrice || t.price || 0) * t.quantity,
+      consumptionUnit: t.consumptionUnit || '',
+      consumptionDate: t.consumptionDate,
+      consumptionApprover: t.consumptionApprover || '',
+      consumptionHandler: t.consumptionHandler || '',
+      status: t.status,
+      createdBy: t.operator?.realName || '未知',
+      createdAt: t.createdAt,
+      remark: t.remark || '',
+    }));
+
+    res.json(formatted);
+  } catch (error) {
+    logger.error('导出出入库记录失败:', error);
+    res.status(500).json({ message: '导出失败', error: error.message });
+  }
+});
+
+// 获取最近交易记录
+router.get('/recent/list', auth, async (req, res) => {
+  try {
+    const limit = parseInt(req.query.limit) || 10;
+
+    const transactions = await Transaction.find()
+      .populate('product', 'name sku')
+      .populate('warehouse', 'name')
+      .sort({ createdAt: -1 })
+      .limit(limit);
+
+    const formatted = transactions.map(t => ({
+      id: t._id,
+      transactionNo: t.transactionNo,
+      productName: t.product?.name || '未知商品',
+      type: t.type,
+      quantity: t.quantity,
+      time: t.createdAt.toLocaleString(),
+    }));
+
+    res.json({ transactions: formatted });
+  } catch (error) {
+    res.status(500).json({ message: '获取最近交易失败', error: error.message });
+  }
+});
+
 // 获取单个交易详情
 router.get('/:id', auth, async (req, res) => {
   try {
@@ -474,111 +578,6 @@ router.put('/:id', auth, async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: '更新失败', error: error.message });
-  }
-});
-
-// 获取最近交易记录
-router.get('/recent/list', auth, async (req, res) => {
-  try {
-    const limit = parseInt(req.query.limit) || 10;
-
-    const transactions = await Transaction.find()
-      .populate('product', 'name sku')
-      .populate('warehouse', 'name')
-      .sort({ createdAt: -1 })
-      .limit(limit);
-
-    const formatted = transactions.map(t => ({
-      id: t._id,
-      transactionNo: t.transactionNo,
-      productName: t.product?.name || '未知商品',
-      type: t.type,
-      quantity: t.quantity,
-      time: t.createdAt.toLocaleString(),
-    }));
-
-    res.json({ transactions: formatted });
-  } catch (error) {
-    res.status(500).json({ message: '获取最近交易失败', error: error.message });
-  }
-});
-
-// 导出出入库记录（按条件搜索）
-router.get('/export', auth, async (req, res) => {
-  try {
-    const {
-      transactionNo,
-      productName,
-      type,
-      status,
-      startDate,
-      endDate,
-    } = req.query;
-
-    // 构建查询条件
-    const query = {};
-
-    if (transactionNo) {
-      query.transactionNo = new RegExp(transactionNo, 'i');
-    }
-    if (productName) {
-      // 需要通过product名称搜索，使用populate后过滤
-    }
-    if (type) {
-      query.type = type;
-    }
-    if (status) {
-      query.status = status;
-    }
-    if (startDate && endDate) {
-      query.createdAt = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate),
-      };
-    }
-
-    // 查询所有符合条件的记录，populate关联数据
-    const transactions = await Transaction.find(query)
-      .populate('product', 'name sku unit specification')
-      .populate('warehouse', 'name')
-      .populate('createdBy', 'realName')
-      .sort({ createdAt: -1 });
-
-    // 格式化数据
-    const formatted = transactions.map(t => ({
-      id: t._id,
-      transactionNo: t.transactionNo,
-      type: t.type,
-      productName: t.product?.name || '未知商品',
-      sku: t.product?.sku || '',
-      spec: t.product?.specification || '',
-      unit: t.product?.unit || '',
-      warehouseName: t.warehouse?.name || '未知仓库',
-      quantity: t.quantity,
-      unitPrice: t.unitPrice || t.price || 0,
-      totalAmount: t.totalAmount || 0,
-      consumptionUnit: t.consumptionUnit || '',
-      consumptionDate: t.consumptionDate,
-      consumptionApprover: t.consumptionApprover || '',
-      consumptionHandler: t.consumptionHandler || '',
-      status: t.status,
-      createdBy: t.createdBy?.realName || '未知',
-      createdAt: t.createdAt,
-      remark: t.remark || '',
-    }));
-
-    // 过滤产品名称
-    let filtered = formatted;
-    if (productName) {
-      filtered = filtered.filter(item =>
-        item.productName.toLowerCase().includes(productName.toLowerCase()) ||
-        item.sku.toLowerCase().includes(productName.toLowerCase())
-      );
-    }
-
-    res.json(filtered);
-  } catch (error) {
-    res.status(500).json({ message: '导出失败', error: error.message });
   }
 });
 

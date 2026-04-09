@@ -68,7 +68,6 @@ export const stocktakeApi = {
     return request({
       url: `/stocktake/${id}/export`,
       method: 'get',
-      responseType: 'blob',
     });
   },
 };

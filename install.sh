@@ -91,6 +91,22 @@ chmod +x node_modules/.bin/vite 2>/dev/null || true
 cd ..
 
 echo ""
+echo "🗄️  初始化数据库..."
+cd backend
+
+# 等待 MongoDB 就绪
+sleep 2
+
+# 运行数据库初始化
+node init-db.js
+
+cd ..
+
+# 修复权限：将项目目录所有者改回给运行 sudo 的用户
+echo "🔧 修复文件权限..."
+chown -R $SUDO_USER:$SUDO_USER .
+
+echo ""
 echo "====================================="
 echo "✅ 环境依赖安装完成！"
 echo "====================================="
