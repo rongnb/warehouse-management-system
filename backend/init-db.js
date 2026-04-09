@@ -43,11 +43,10 @@ const initData = async () => {
 
     console.log('✅ 已清空原有数据');
 
-    // 创建管理员用户
-    const adminPassword = await bcrypt.hash('123456', 10);
+    // 创建管理员用户（pre('save')会自动哈希密码，不需要手动哈希）
     const admin = new User({
       username: 'admin',
-      password: adminPassword,
+      password: '123456',
       realName: '系统管理员',
       email: 'admin@example.com',
       phone: '13800138000',
@@ -56,10 +55,9 @@ const initData = async () => {
     await admin.save();
 
     // 创建普通用户（仓管员A）
-    const keeperAPassword = await bcrypt.hash('123456', 10);
     const keeperA = new User({
       username: 'keeper_a',
-      password: keeperAPassword,
+      password: '123456',
       realName: '仓管员A',
       email: 'keeper_a@example.com',
       phone: '13800138001',
@@ -68,10 +66,9 @@ const initData = async () => {
     await keeperA.save();
 
     // 创建普通用户（仓管员B）
-    const keeperBPassword = await bcrypt.hash('123456', 10);
     const keeperB = new User({
       username: 'keeper_b',
-      password: keeperBPassword,
+      password: '123456',
       realName: '仓管员B',
       email: 'keeper_b@example.com',
       phone: '13800138002',
@@ -218,6 +215,7 @@ const initData = async () => {
     console.log('✅ 库存数据初始化完成');
 
     // 创建一些交易记录
+    const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
     const transactions = [];
     for (let i = 0; i < 20; i++) {
       const product = createdProducts[Math.floor(Math.random() * createdProducts.length)];
@@ -225,16 +223,27 @@ const initData = async () => {
       const type = Math.random() > 0.5 ? 'in' : 'out';
       const quantity = Math.floor(Math.random() * 20) + 1;
 
+      // 生成交易单号
+      let prefix = 'OUT';
+      if (type === 'in') prefix = 'IN';
+      const random = Math.random().toString(36).substr(2, 6).toUpperCase();
+      const transactionNo = `${prefix}${date}${random}`;
+
       transactions.push({
+        transactionNo,
         type,
         product: product._id,
         warehouse: warehouse._id,
         quantity,
         price: type === 'in' ? product.costPrice : product.price,
+        unitPrice: type === 'in' ? product.costPrice : product.price,
+        totalAmount: quantity * (type === 'in' ? product.costPrice : product.price),
         supplier: type === 'in' ? product.supplier : undefined,
         customer: type === 'out' ? '客户' + Math.floor(Math.random() * 100) : undefined,
         operator: admin._id,
+        createdBy: admin._id,
         remark: type === 'in' ? '采购入库' : '销售出库',
+        status: 'completed',
         createdAt: new Date(Date.now() - Math.floor(Math.random() * 30 * 24 * 60 * 60 * 1000)),
       });
     }

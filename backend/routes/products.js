@@ -222,11 +222,14 @@ router.post('/', auth, requireRole(['admin', 'manager']), async (req, res) => {
       supplier,
       description,
       specification,
+      modelName,
+      manufacturer,
       unit,
       price,
       costPrice,
       minStock,
       maxStock,
+      status,
       remark
     } = req.body;
 
@@ -248,18 +251,55 @@ router.post('/', auth, requireRole(['admin', 'manager']), async (req, res) => {
       return res.status(400).json({ message: '商品SKU已存在' });
     }
 
+    // 查找或创建默认分类
+    let finalCategory = category;
+    if (!finalCategory || finalCategory.trim() === '') {
+      let defaultCategory = await Category.findOne();
+      if (!defaultCategory) {
+        defaultCategory = new Category({
+          name: '默认分类',
+          code: 'DEFAULT',
+          description: '系统默认分类',
+        });
+        await defaultCategory.save();
+        logger.info('创建默认分类', { categoryId: defaultCategory._id });
+      }
+      finalCategory = defaultCategory._id;
+    }
+
+    // 查找或创建默认供应商
+    let finalSupplier = supplier;
+    if (!finalSupplier || finalSupplier.trim() === '') {
+      let defaultSupplier = await Supplier.findOne();
+      if (!defaultSupplier) {
+        defaultSupplier = new Supplier({
+          name: '默认供应商',
+          code: 'DEFAULT',
+          contact: '系统默认',
+          phone: '13800138000',
+          level: 'B',
+        });
+        await defaultSupplier.save();
+        logger.info('创建默认供应商', { supplierId: defaultSupplier._id });
+      }
+      finalSupplier = defaultSupplier._id;
+    }
+
     const product = new Product({
       name,
       sku: finalSku,
-      category,
-      supplier,
+      category: finalCategory,
+      supplier: finalSupplier,
       description,
       specification,
+      modelName,
+      manufacturer,
       unit,
       price,
       costPrice,
       minStock,
       maxStock,
+      status: status !== undefined ? status : true,
       remark,
       createdBy: req.user._id,
       updatedBy: req.user._id,
@@ -272,6 +312,7 @@ router.post('/', auth, requireRole(['admin', 'manager']), async (req, res) => {
 
     res.status(201).json({
       message: '商品创建成功',
+      id: product._id,
       product,
     });
   } catch (error) {

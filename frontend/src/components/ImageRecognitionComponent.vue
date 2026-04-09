@@ -73,6 +73,19 @@
                   style="width: 150px"
                 />
               </el-descriptions-item>
+              <el-descriptions-item label="匹配商品" v-if="matchedProduct">
+                <span class="result-value matched">
+                  ✅ {{ matchedProduct.name }} ({{ matchedProduct.sku }})
+                </span>
+              </el-descriptions-item>
+              <el-descriptions-item label="匹配状态" v-else>
+                <el-tag type="warning">未找到匹配商品</el-tag>
+              </el-descriptions-item>
+              <el-descriptions-item label="识别文字" v-if="recognitionResult.ocrText">
+                <div class="ocr-text">
+                  <pre>{{ recognitionResult.ocrText }}</pre>
+                </div>
+              </el-descriptions-item>
             </el-descriptions>
           </div>
           <div class="result-actions">
@@ -80,14 +93,24 @@
               <el-icon><Refresh /></el-icon>
               重拍
             </el-button>
-            <el-button @click="step = 'manual'">
+            <el-button @click="goToManualWithResult">
               <el-icon><EditPen /></el-icon>
               手动输入
             </el-button>
-            <el-button type="success" @click="confirmResult">
+            <el-button type="primary" @click="confirmResult(false)" v-if="matchedProduct">
               <el-icon><Check /></el-icon>
-              确认识别结果
+              使用现有商品
             </el-button>
+            <template v-if="props.mode !== 'outbound'">
+              <el-button type="success" @click="confirmResult(true)" v-if="!matchedProduct">
+                <el-icon><Check /></el-icon>
+                创建新商品并提交
+              </el-button>
+              <el-button type="warning" @click="confirmResult(false)" v-if="!matchedProduct">
+                <el-icon><Check /></el-icon>
+                仅提交识别结果
+              </el-button>
+            </template>
           </div>
         </div>
       </el-card>
@@ -134,12 +157,17 @@ import { ElMessage, ElForm, ElFormItem, ElInput, ElButton, ElDivider } from 'ele
 import type { FormInstance, FormRules } from 'element-plus';
 import { Loading, Refresh, EditPen, Check, Camera } from '@element-plus/icons-vue';
 import CameraComponent from './CameraComponent.vue';
-import { recognizeImage } from '@/utils/imageRecognition';
-import type { RecognitionResult } from '@/utils/imageRecognition';
+import { ocrApi, type RecognitionResult } from '@/api/ocr';
+
+// 接收属性
+const props = defineProps<{
+  products?: any[]; // 商品列表，用于检查是否匹配
+  mode?: 'inbound' | 'outbound'; // 使用场景：入库或出库
+}>();
 
 // 暴露事件
 const emit = defineEmits<{
-  (e: 'result', data: RecognitionResult): void;
+  (e: 'result', data: RecognitionResult, createNew?: boolean): void;
   (e: 'cancel'): void;
 }>();
 
@@ -149,9 +177,11 @@ const photoData = ref<string | null>(null);
 const recognitionResult = ref<RecognitionResult>({
   modelName: '未识别',
   manufacturer: '未识别',
-  confidence: 0
+  confidence: 0,
+  ocrText: ''
 });
 const recognitionProgress = ref(0);
+const matchedProduct = ref<any>(null); // 匹配到的商品
 
 // 手动输入表单
 const manualFormRef = ref<FormInstance>();
@@ -176,7 +206,21 @@ const handlePhotoTaken = async (data: string) => {
   await performRecognition(data);
 };
 
-// 执行图像识别
+// 将base64转换为File对象
+function base64ToFile(base64: string, filename: string = 'image.jpg'): File {
+  // 去掉data:image/jpeg;base64,前缀
+  const arr = base64.split(',');
+  const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/jpeg';
+  const bstr = atob(arr[1]);
+  let n = bstr.length;
+  const u8arr = new Uint8Array(n);
+  while (n--) {
+    u8arr[n] = bstr.charCodeAt(n);
+  }
+  return new File([u8arr], filename, { type: mime });
+}
+
+// 执行图像识别 - 调用后端OCR API
 const performRecognition = async (imageData: string) => {
   try {
     // 模拟进度更新
@@ -186,8 +230,15 @@ const performRecognition = async (imageData: string) => {
       }
     }, 200);
 
-    // 执行识别
-    recognitionResult.value = await recognizeImage(imageData);
+    // 将base64图片转为File
+    const imageFile = base64ToFile(imageData, 'captured.jpg');
+
+    // 调用后端OCR API
+    const response = await ocrApi.recognize(imageFile);
+    recognitionResult.value = response.result;
+
+    // 检查是否匹配到商品
+    matchedProduct.value = findMatchingProduct(recognitionResult.value);
 
     clearInterval(progressInterval);
     recognitionProgress.value = 100;
@@ -198,9 +249,72 @@ const performRecognition = async (imageData: string) => {
     }, 500);
   } catch (error: any) {
     console.error('图像识别失败:', error);
-    ElMessage.error('图像识别失败，请重试或手动输入');
+    ElMessage.error(error.message || '图像识别失败，请重试或手动输入');
     step.value = 'camera';
   }
+};
+
+// 查找匹配的商品
+const findMatchingProduct = (result: RecognitionResult): any => {
+  if (!props.products || props.products.length === 0) {
+    return null;
+  }
+
+  // 优化的匹配策略
+  const matches = [];
+  const resultModelLower = result.modelName?.toLowerCase() || '';
+  const resultManufacturerLower = result.manufacturer?.toLowerCase() || '';
+
+  for (const product of props.products) {
+    const productNameLower = product.name?.toLowerCase() || '';
+    const productSkuLower = product.sku?.toLowerCase() || '';
+    const productManufacturerLower = product.manufacturer?.toLowerCase() || '';
+
+    // 计算匹配分数
+    let score = 0;
+
+    // 名称完全匹配
+    if (productNameLower === resultModelLower || productNameLower === resultManufacturerLower) {
+      score += 100;
+    }
+    // 名称包含匹配
+    if (productNameLower.includes(resultModelLower)) score += 50;
+    if (productNameLower.includes(resultManufacturerLower)) score += 30;
+
+    // SKU匹配
+    if (productSkuLower === resultModelLower) score += 100;
+    if (productSkuLower.includes(resultModelLower)) score += 60;
+
+    // 厂家匹配
+    if (productManufacturerLower === resultManufacturerLower) score += 50;
+    if (productManufacturerLower.includes(resultManufacturerLower)) score += 25;
+
+    // 组合匹配：厂家+型号
+    if (productNameLower.includes(resultManufacturerLower) && productNameLower.includes(resultModelLower)) {
+      score += 80;
+    }
+
+    // 至少有一些匹配才添加到结果中
+    if (score > 20) {
+      matches.push({
+        product,
+        score
+      });
+    }
+  }
+
+  // 根据分数排序，返回分数最高的匹配
+  if (matches.length > 0) {
+    matches.sort((a, b) => b.score - a.score);
+    console.log('匹配结果分数:', matches.map(m => ({
+      name: m.product.name,
+      score: m.score
+    })));
+
+    return matches[0].product;
+  }
+
+  return null;
 };
 
 // 获取置信度状态
@@ -215,8 +329,15 @@ const getConfidenceStatus = (confidence: number) => {
 };
 
 // 确认识别结果
-const confirmResult = () => {
-  emit('result', recognitionResult.value);
+const confirmResult = (createNew: boolean = false) => {
+  emit('result', recognitionResult.value, createNew);
+};
+
+// 跳转到手动输入并带入识别结果
+const goToManualWithResult = () => {
+  manualForm.modelName = recognitionResult.value.modelName;
+  manualForm.manufacturer = recognitionResult.value.manufacturer;
+  step.value = 'manual';
 };
 
 // 确认手动输入
@@ -228,7 +349,8 @@ const confirmManualInput = async () => {
     emit('result', {
       modelName: manualForm.modelName,
       manufacturer: manualForm.manufacturer,
-      confidence: 1 // 手动输入的置信度为100%
+      confidence: 1, // 手动输入的置信度为100%
+      ocrText: '' // 手动输入没有OCR文字
     });
   } catch (error) {
     console.error('表单验证失败:', error);
@@ -329,6 +451,24 @@ const handleCancel = () => {
 .result-value {
   font-weight: bold;
   color: #409EFF;
+}
+
+.ocr-text {
+  max-height: 150px;
+  overflow-y: auto;
+  text-align: left;
+  background: #f5f7fa;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.ocr-text pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #606266;
 }
 
 .result-info {

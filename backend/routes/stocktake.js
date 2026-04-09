@@ -89,6 +89,21 @@ router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), as
       return res.status(400).json({ message: '仓库不存在' });
     }
 
+    // 显式生成stocktakeNo
+    const date = new Date();
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    const count = await Stocktake.countDocuments({
+      createdAt: {
+        $gte: new Date(year, month - 1, day),
+        $lt: new Date(year, month - 1, day + 1),
+      },
+    });
+
+    const stocktakeNo = `PD${year}${month}${day}${String(count + 1).padStart(4, '0')}`;
+
     // 获取该仓库所有库存
     const inventories = await Inventory.find({ warehouse })
       .populate('product', 'name sku spec unit price');
@@ -111,6 +126,7 @@ router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), as
     });
 
     const stocktake = new Stocktake({
+      stocktakeNo,
       title,
       warehouse,
       warehouseName: warehouseExists.name,
@@ -209,7 +225,7 @@ router.post('/:id/submit', auth, async (req, res) => {
   }
 });
 
-// 核实盘库单
+// 核实盘库单 - 双人核实，发起人可以作为第一核实人
 router.post('/:id/confirm', auth, async (req, res) => {
   try {
     const { id } = req.params;
@@ -226,20 +242,16 @@ router.post('/:id/confirm', auth, async (req, res) => {
 
     // 双人核实逻辑
     if (!stocktake.firstConfirmedBy) {
-      // 第一核实人
+      // 第一核实人（发起人也可以）
       stocktake.firstConfirmedBy = req.user._id;
       stocktake.firstConfirmedAt = new Date();
       stocktake.firstConfirmedRemark = remark || '';
       await stocktake.save();
       res.json({ message: '第一核实人确认成功，等待第二核实人确认' });
     } else if (!stocktake.secondConfirmedBy) {
-      // 第二核实人，必须是不同的用户
+      // 第二核实人：不能是第一核实人
       if (stocktake.firstConfirmedBy.toString() === req.user._id.toString()) {
         return res.status(400).json({ message: '第二核实人不能与第一核实人相同' });
-      }
-      // 检查权限，第二核实人可以是管理员、经理或另一位仓管员
-      if (!['manager', 'admin', 'warehouse_keeper'].includes(req.user.role)) {
-        return res.status(403).json({ message: '第二核实人需要管理员、经理或仓管员权限' });
       }
 
       stocktake.secondConfirmedBy = req.user._id;
@@ -251,17 +263,17 @@ router.post('/:id/confirm', auth, async (req, res) => {
       stocktake.endTime = new Date();
 
       // 更新库存并生成出入库记录
-      const session = await mongoose.startSession();
-      session.startTransaction();
-
       try {
         for (const item of stocktake.items) {
           if (item.difference !== 0) {
             // 更新库存
             await Inventory.findOneAndUpdate(
               { product: item.product, warehouse: stocktake.warehouse },
-              { $inc: { quantity: item.difference, lastUpdated: new Date(), updatedBy: req.user._id } },
-              { session }
+              {
+                $inc: { quantity: item.difference },
+                lastUpdated: new Date(),
+                updatedBy: req.user._id
+              }
             );
 
             // 生成交易记录
@@ -273,23 +285,20 @@ router.post('/:id/confirm', auth, async (req, res) => {
               warehouse: stocktake.warehouse,
               quantity: Math.abs(item.difference),
               price: item.unitPrice,
+              unitPrice: item.unitPrice,
               referenceNo: stocktake.stocktakeNo,
               remark: `盘库${item.differenceType === 'profit' ? '盘盈' : '盘亏'}：${item.productName}`,
+              operator: req.user._id,
               createdBy: req.user._id,
               status: 'completed',
             });
-            await transaction.save({ session });
+            await transaction.save();
           }
         }
-
-        await session.commitTransaction();
-        session.endSession();
 
         await stocktake.save();
         res.json({ message: '第二核实人确认成功，盘库完成，库存已更新' });
       } catch (error) {
-        await session.abortTransaction();
-        session.endSession();
         throw error;
       }
     } else {

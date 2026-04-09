@@ -1,0 +1,23 @@
+{
+  "name": "warehouse-management-system",
+  "version": "0.0.3",
+  "description": "仓库管理系统 - 功能完善版",
+  "main": "backend/server.js",
+  "scripts": {
+    "dev:start": "cd backend && npm run dev",
+    "start": "cd backend && npm start",
+    "dev:build": "cd frontend && npm run build",
+    "install:all": "cd backend && npm install; cd ../frontend && npm install",
+    "init-db": "cd backend && npm run init-db"
+  },
+  "keywords": [
+    "warehouse",
+    "inventory",
+    "management"
+  ],
+  "author": "rongnb",
+  "license": "ISC",
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}

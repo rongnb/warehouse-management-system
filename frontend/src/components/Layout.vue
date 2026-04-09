@@ -59,6 +59,12 @@
           <el-icon><User /></el-icon>
           <template #title>用户管理</template>
         </el-menu-item>
+
+        <!-- OCR识别测试 -->
+        <el-menu-item index="/ocr-test">
+          <el-icon><Camera /></el-icon>
+          <template #title>OCR识别测试</template>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -136,7 +142,8 @@ import {
   CircleCheck,
   OfficeBuilding,
   Menu as MenuIcon,
-  User
+  User,
+  Camera
 } from '@element-plus/icons-vue';
 
 const store = useGlobalStore();

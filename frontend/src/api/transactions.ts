@@ -61,7 +61,15 @@ export const transactionsApi = {
       url: '/transactions/export',
       method: 'get',
       params,
-      responseType: 'blob',
+    })
+  },
+
+  // 更新交易记录
+  update: (id: string, data: any) => {
+    return request({
+      url: `/transactions/${id}`,
+      method: 'put',
+      data,
     })
   },
 }

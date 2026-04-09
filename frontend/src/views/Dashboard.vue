@@ -83,15 +83,14 @@
             <el-button type="primary" text @click="goToInventory">查看全部</el-button>
           </template>
           <el-empty v-if="lowStockProducts.length === 0" description="暂无库存预警" />
-          <el-list v-else border>
-            <el-list-item v-for="product in lowStockProducts" :key="product.id">
-              <div class="warning-item">
-                <span class="product-name">{{ product.name }}</span>
-                <el-tag type="danger" size="small">库存不足</el-tag>
-                <span class="stock-qty">剩余: {{ product.quantity }}</span>
-              </div>
-            </el-list-item>
-          </el-list>
+          <el-table v-else :data="lowStockProducts" style="width: 100%">
+            <el-table-column prop="name" label="商品名称" />
+            <el-table-column prop="quantity" label="库存" width="100" align="center">
+              <template #default="{ row }">
+                <el-tag type="danger" size="small">{{ row.quantity }}</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
         </el-card>
       </el-col>
       
@@ -110,7 +109,7 @@
           <div ref="pieChartRef" class="pie-chart"></div>
         </el-card>
       </el-col>
-      
+
       <!-- 最近交易 -->
       <el-col :xs="24" :sm="24" :md="12" :lg="12" :xl="12">
         <el-card title="最近交易" class="chart-card">
@@ -128,6 +127,33 @@
               </template>
             </el-table-column>
             <el-table-column prop="time" label="时间" width="150" />
+          </el-table>
+        </el-card>
+      </el-col>
+    </el-row>
+
+    <!-- 最近出库记录（每个商品最近3笔） -->
+    <el-row :gutter="24" style="margin-top: 24px;">
+      <el-col :span="24">
+        <el-card title="商品最近出库记录（每个商品取最近3笔）" class="chart-card">
+          <template #extra>
+            <el-button type="primary" text @click="refreshRecentOutbound">刷新</el-button>
+          </template>
+          <el-empty v-if="recentOutboundProducts.length === 0" description="暂无出库记录" />
+          <el-table v-else :data="recentOutboundProducts" style="width: 100%" border stripe>
+            <el-table-column prop="productName" label="商品" min-width="200" />
+            <el-table-column label="最近3笔出库" min-width="500">
+              <template #default="{ row }">
+                <div v-if="row.recentOutbound.length === 0" class="text-gray">暂无出库记录</div>
+                <div v-else>
+                  <div v-for="(item, index) in row.recentOutbound" :key="index" class="outbound-item">
+                    <span class="outbound-date">{{ item.date }}</span>
+                    <span class="outbound-qty">数量: {{ item.quantity }}</span>
+                    <span class="outbound-unit">领用单位: {{ item.consumptionUnit || '-' }}</span>
+                  </div>
+                </div>
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
       </el-col>
@@ -166,6 +192,8 @@ const stats = reactive({
 
 const lowStockProducts = ref([]);
 const recentTransactions = ref([]);
+const recentOutboundProducts = ref<any[]>([]);
+const outboundLoading = ref(false);
 
 const loadDashboardData = async () => {
   try {
@@ -180,7 +208,10 @@ const loadDashboardData = async () => {
     // 获取最近交易
     const transactionsRes = await apiClient.get('/api/dashboard/recent-transactions');
     recentTransactions.value = transactionsRes.data.transactions;
-    
+
+    // 获取商品最近出库记录
+    await loadRecentOutbound();
+
     // 初始化图表
     initCharts();
   } catch (error) {
@@ -295,6 +326,25 @@ const goToTransactions = () => {
   router.push('/transactions');
 };
 
+// 加载商品最近出库记录
+const loadRecentOutbound = async () => {
+  try {
+    outboundLoading.value = true;
+    const res = await apiClient.get('/api/dashboard/recent-outbound');
+    recentOutboundProducts.value = res.data.products;
+  } catch (error) {
+    console.error('加载最近出库记录失败:', error);
+    ElMessage.error('加载最近出库记录失败');
+  } finally {
+    outboundLoading.value = false;
+  }
+};
+
+// 刷新最近出库记录
+const refreshRecentOutbound = () => {
+  loadRecentOutbound();
+};
+
 onMounted(() => {
   loadDashboardData();
 });
@@ -400,5 +450,38 @@ onMounted(() => {
   font-size: 12px;
   color: #909399;
   margin-left: 8px;
+}
+
+.outbound-item {
+  display: flex;
+  gap: 16px;
+  padding: 6px 0;
+  border-bottom: 1px dashed #f0f0f0;
+}
+
+.outbound-item:last-child {
+  border-bottom: none;
+}
+
+.outbound-date {
+  color: #909399;
+  font-size: 13px;
+  min-width: 90px;
+}
+
+.outbound-qty {
+  color: #606266;
+  font-size: 13px;
+  min-width: 70px;
+}
+
+.outbound-unit {
+  color: #409eff;
+  font-size: 13px;
+}
+
+.text-gray {
+  color: #909399;
+  font-size: 13px;
 }
 </style>
