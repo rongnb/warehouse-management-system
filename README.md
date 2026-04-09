@@ -1,11 +1,14 @@
 # 仓库管理系统 (Warehouse Management System)
-## 版本 v0.0.2 | 企业内网专用版
+## 版本 v0.0.4 | 企业内网专用版
 
 专为企业设计的轻量化仓库管理系统，支持办公用品、耗材、电子产品、工具等各类物品的全生命周期管理，完全离线可用，无需外网依赖，一键启动部署。
+
+**核心新增功能：** ✅ 支持调用**本地计算机/手机摄像头**拍照，图片上传服务器后端进行 OCR 文字识别，自动提取商品型号和厂家信息，快速录入商品！
 
 ---
 
 ## ✨ 功能特性
+
 ### 📦 核心业务功能
 | 模块 | 功能说明 |
 |------|----------|
@@ -18,6 +21,7 @@
 | **分类管理** | 多级产品分类、自定义分类、分类排序 |
 | **仪表盘** | 库存统计、出入库趋势、数据概览、近30天业务数据可视化 |
 | **报表导出** | 库存报表、盘点报表、出入库报表导出 |
+| **拍照识别** | 🆕 调用本地摄像头拍照，服务器 OCR 自动识别商品型号和厂家，快速录入 |
 
 ### 🔒 安全特性
 - JWT身份认证，token自动过期
@@ -26,12 +30,19 @@
 - 接口权限校验，防止越权操作
 - 操作日志全程记录
 
+### 📷 拍照识别特性
+- ✅ **调用本地设备摄像头**：摄像头始终是调用浏览器所在设备（你的电脑/手机），不调用服务器摄像头
+- ✅ **内网访问支持**：修改了浏览器安全检查，内网 IP HTTP 访问也能使用摄像头
+- ✅ **服务器后端 OCR**：图片上传到服务器识别，减轻客户端压力，识别更快更准确
+- ✅ **自动提取信息**：自动识别商品型号和生产厂家
+
 ### 🖥️ 用户体验
 - 响应式设计，完美适配PC和移动端
 - Element Plus企业级UI组件，操作简洁直观
 - 统一错误提示，友好的交互反馈
 - 面包屑导航，操作路径清晰
 - 侧边栏可折叠，适配不同屏幕尺寸
+- **图形化一键启动** 🆕：Python Tkinter 图形化启动器，点击就能启动，不用打开终端
 
 ---
 
@@ -44,14 +55,50 @@
 | 路由 | Vue Router | 4.x |
 | 后端 | Node.js + Express | 18.x+ |
 | 数据库 | MongoDB | 4.4.x |
+| OCR 识别 | Tesseract.js | 5.x |
 | ODM | Mongoose | 7.x |
 | 认证 | JWT + bcryptjs | - |
+| 图形化启动器 | Python Tkinter | Python 3 标准库 |
 
 ---
 
 ## 🚀 快速开始
 
-### 🔹 第一次使用？
+### 🔹 Linux 系统 (推荐新方式)
+
+1. **克隆项目**
+```bash
+git clone https://github.com/rongnb/warehouse-management-system.git
+cd warehouse-management-system
+```
+
+2. **一键安装**
+```bash
+chmod +x install.sh
+./install.sh
+```
+自动完成：环境检查 → MongoDB 安装 → 依赖安装 → 数据库初始化
+
+3. **图形化启动**
+```bash
+chmod +x gui-start.sh
+./gui-start.sh
+```
+窗口弹出后点击 **🚀 启动服务** 即可，自动打开浏览器。
+
+> 💡 如果 `./gui-start.sh` 提示缺少 tkinter，请安装：
+> ```bash
+> sudo apt install python3-tk
+> ```
+
+**命令行启动**（如果你不想用图形化）：
+```bash
+chmod +x start.sh
+./start.sh
+```
+
+### 🔹 Windows 系统
+
 #### 方案一：离线部署（推荐，内网环境零依赖）
 > 💡 完全不需要外网，所有依赖已打包在项目内
 
@@ -69,7 +116,7 @@
    ```batch
    双击运行 start-portable.bat
    ```
-   自动启动：MongoDB数据库 → 后端API服务 → 前端页面服务
+   自动启动：MongoDB数据库 → 后端API服务 → 前端页面服务 → 自动打开浏览器
 
 4. **访问系统**
    打开浏览器访问：http://localhost:5173
@@ -77,7 +124,7 @@
 #### 方案二：在线部署（有外网环境）
 1. **环境要求**
    - Node.js >= 18.0.0
-   - MongoDB >= 4.4（推荐使用4.4.x系列，与便携版版本一致，稳定性最佳）
+   - MongoDB >= 4.4（推荐使用4.4.x系列，稳定性最佳）
 
 2. **自动安装**
    ```batch
@@ -87,14 +134,27 @@
 
 3. **启动服务**
    ```batch
-   双击运行 start.bat
+   double-click start.bat
    ```
 
 ---
 
 ## ⚙️ 启停管理
 
-### 便携版启动/停止（完全离线，无需安装服务）
+### Linux 图形化
+- 从系统应用菜单点击 **仓库管理系统** 启动
+- 或者终端运行 `./gui-start.sh`
+- 在GUI窗口点击启动/停止，自动打开浏览器
+
+### Linux 命令行
+```bash
+# 一键启动
+./start.sh
+
+# 按 Ctrl+C 停止所有服务
+```
+
+### Windows 便携版（完全离线，无需安装服务）
 ```batch
 # 启动所有服务
 双击 start-portable.bat
@@ -103,25 +163,13 @@
 双击 stop-portable.bat
 ```
 
-### 常规版启动/停止
+### Windows 常规版
 ```batch
 # 一键启动
 start.bat
 
 # 一键停止
 stop.bat
-
-# 单独启动后端
-backend-start.bat
-
-# 单独启动前端
-frontend-start.bat
-
-# 单独启动MongoDB
-mongodb-start.bat
-
-# 检查MongoDB状态
-mongodb-status.bat
 ```
 
 ---
@@ -138,6 +186,19 @@ mongodb-status.bat
 ---
 
 ## 📖 使用说明
+
+### 拍照识别使用方法
+
+1. 在出入库或添加商品页面，点击 **拍照识别** 按钮
+2. 点击 **📷 使用拍照功能**，浏览器会请求摄像头权限，点击**允许**
+3. 对准商品标签拍照，点击 **确认**
+4. 图片上传到服务器，OCR 自动识别出型号和厂家
+5. 确认识别结果，完成商品录入
+
+> 💡 拍照提示：
+> - 尽量保持标签平整，光线充足
+> - 如果识别不准确，可以手动修改结果
+> - 也可以选择 **📁 从相册选择图片** 上传
 
 ### 1. 商品管理
 - **添加商品**：点击"新增商品"按钮，填写商品信息（名称、分类、规格、供应商、库存预警值等）
@@ -156,7 +217,7 @@ mongodb-status.bat
 #### 入库流程
 1. 点击"新增入库单"
 2. 选择供应商和入库仓库
-3. 添加入库商品（支持扫码添加）
+3. 添加入库商品（支持**拍照识别**快速添加）
 4. 填写入库数量和批次号
 5. 提交审核（由管理员审核）
 6. 审核通过后，库存自动增加
@@ -204,67 +265,92 @@ warehouse-management-system/
 ├── backend/                   # 后端服务代码
 │   ├── middleware/            # 中间件（JWT认证等）
 │   ├── models/                # 数据模型（8个业务模型）
-│   ├── routes/                # API接口路由（11个业务模块）
-│   ├── .env                   # 环境配置
+│   ├── routes/                # API接口路由
+│   │   └── ocr.js             # 🆕 OCR识别接口
+│   ├── .env.example           # 环境配置示例
 │   ├── server.js              # 后端入口文件
 │   └── package.json           # 后端依赖配置
 ├── frontend/                  # 前端应用代码
+│   ├── public/                # 静态资源
+│   │   └── camera-test.html     # 摄像头测试页面
 │   ├── src/
-│   │   ├── api/               # API接口封装（与后端一一对应）
-│   │   ├── components/        # 公共组件（布局、通用组件）
+│   │   ├── api/               # API接口封装
+│   │   │   └── ocr.ts          # 🆕 OCR识别API
+│   │   ├── components/        # 公共组件
+│   │   │   ├── CameraComponent.vue       # 摄像头组件
+│   │   │   └── ImageRecognitionComponent.vue # 图像识别组件
 │   │   ├── router/            # 路由配置
 │   │   ├── stores/            # Pinia全局状态管理
-│   │   ├── utils/             # 工具函数（请求封装等）
+│   │   ├── utils/             # 工具函数
 │   │   ├── views/             # 页面组件（8个业务页面）
 │   │   ├── App.vue            # 根组件
 │   │   └── main.ts            # 前端入口文件
 │   ├── package.json           # 前端依赖配置
 │   └── vite.config.ts         # Vite配置
+├── electron-manager/           # 旧 Electron 图形启动器（保留但默认不用）
 ├── mongodb/                   # MongoDB便携版（可选，离线部署用）
-│   └── bin/                   # MongoDB可执行文件
 ├── database/                  # 数据库脚本
-│   └── init.js                # 初始化脚本（默认数据）
 ├── data/                      # 数据库数据目录（自动生成）
-├── *.bat                      # Windows批处理脚本（启动、安装、管理等）
+├── gui-start.py                # 🆕 Python Tkinter 图形化启动器
+├── gui-start.sh                # 🆕 Linux 图形化启动脚本
+├── install.sh                  # Linux 一键安装脚本
+├── start.sh                   # Linux 一键启动脚本
+├── *.bat                      # Windows 批处理脚本（启动、安装、管理等）
+├── warehouse-manager.desktop   # 🆕 Linux 桌面入口文件
 ├── README.md                  # 本文档
-├── QUICKSTART.md              # 快速上手指南
-└── DEPLOY_INSTRUCTION.md      # 详细部署说明
+└── ...
 ```
 
 ---
 
 ## ❓ 常见问题
 
-### Q1：启动后无法访问页面？
-A：检查端口5173是否被占用，或修改 `frontend/vite.config.ts` 中的端口号。
-
-### Q2：数据库连接失败？
+### Q1：摄像头无法启动？
 A：
-1. 检查MongoDB服务是否启动，运行 `mongodb-status.bat` 查看状态
-2. 确认27017端口没有被其他程序占用
-3. 便携版检查 `mongodb/bin/mongod.exe` 是否存在
+- Chrome 浏览器默认禁止 HTTP 非 localhost 使用摄像头，这是浏览器安全策略
+- 如果是内网访问（如 `http://192.168.x.x`），请按照以下步骤设置：
+  1. 在 Chrome 地址栏打开：`chrome://flags/#unsafely-treat-insecure-origin-as-secure`
+  2. 在输入框添加你的地址：`http://192.168.x.x:5173`
+  3. 选择 `Enabled`，重启 Chrome 即可
 
-### Q3：忘记管理员密码？
-A：运行 `backend/reset-admin-password.bat` 可重置管理员密码为123456。
+### Q2：启动后无法访问页面？
+A：检查端口 5173 是否被占用，或修改 `frontend/vite.config.ts` 中的端口号。
 
-### Q4：如何修改服务端口？
+### Q3：数据库连接失败？
+A：
+1. 检查 MongoDB 服务是否启动
+2. 确认 27017 端口没有被其他程序占用
+3. 便携版检查 `mongodb/bin/mongod` 是否存在
+
+### Q4：忘记管理员密码？
+A：在图形化界面点击 **🔐 重置密码** 按钮，即可重置管理员密码为 `123456`。
+或者命令行运行 `node backend/reset-admin-password.js`。
+
+### Q5：如何修改服务端口？
 A：
 - 后端端口：修改 `backend/server.js` 中的端口配置
-- 前端端口：修改 `frontend/vite.config.ts` 中的server.port
-- 数据库端口：修改 `backend/.env` 中的MONGODB_URI连接地址
+- 前端端口：修改 `frontend/vite.config.ts` 中的 `server.port`
+- 数据库端口：修改 `backend/.env` 中的 `MONGODB_URI` 连接地址
 
-### Q5：数据如何备份？
+### Q6：数据如何备份？
 A：直接拷贝整个 `data/db` 目录即可，所有数据都存在这个目录中，恢复时直接覆盖即可。
+
+### Q7：图形化窗口不显示？
+A：
+- 确保你在本地桌面 Linux 环境运行，不是通过 SSH 远程
+- 如果通过 SSH X11 转发，请确保 X 服务配置正确
+- 或者直接使用命令行 `./start.sh` 启动，然后手动打开浏览器访问
 
 ---
 
 ## 📞 技术支持
-- 部署问题：检查DEPLOY_INSTRUCTION.md部署文档
-- 使用问题：参考系统内置的帮助中心
-- 定制开发：联系系统管理员
+- 部署问题：参考本 README
+- 使用问题：参考系统内置的使用说明
+- 定制开发：联系开发者
 
 ---
 
 ## 📄 许可证
 MIT License
+
 © 2024 企业内部使用
