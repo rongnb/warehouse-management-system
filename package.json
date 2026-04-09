@@ -1,7 +1,7 @@
 {
   "name": "warehouse-management-system",
-  "version": "0.0.3",
-  "description": "仓库管理系统 - 功能完善版",
+  "version": "0.0.4",
+  "description": "仓库管理系统 - 功能完善版，支持本地摄像头拍照服务器OCR识别",
   "main": "backend/server.js",
   "scripts": {
     "dev:start": "cd backend && npm run dev",
@@ -13,7 +13,9 @@
   "keywords": [
     "warehouse",
     "inventory",
-    "management"
+    "management",
+    "ocr",
+    "camera"
   ],
   "author": "rongnb",
   "license": "ISC",
