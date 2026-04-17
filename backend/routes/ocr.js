@@ -53,7 +53,14 @@ router.post('/recognize', auth, upload.single('image'), asyncHandler(async (req,
     return res.status(400).json({ message: '请上传图片' });
   }
 
-  const imagePath = req.file.path;
+  // 防御 path-injection：将 req.file.path 锚定在 uploads 目录内
+  const uploadsRoot = path.resolve(__dirname, '../uploads');
+  const resolvedPath = path.resolve(req.file.path);
+  if (!resolvedPath.startsWith(uploadsRoot + path.sep)) {
+    logger.warn('❌ 非法的上传路径', { path: req.file.path });
+    return res.status(400).json({ message: '非法的上传文件路径' });
+  }
+  const imagePath = resolvedPath;
   logger.info(`📷 图片已保存: ${imagePath}`);
 
   try {
@@ -106,5 +113,4 @@ router.get('/status', auth, asyncHandler(async (req, res) => {
 }));
 
 module.exports = router;
-module.exports.parseOCRResult = parseOCRResult;
-module.exports.initializeWorker = initializeWorker;
+// 注意：parseOCRResult / initializeWorker 已迁移至 backend/services/ocr.js，请直接从那里 import。

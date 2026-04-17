@@ -418,6 +418,13 @@ router.post('/import', auth, requireRole(['admin', 'manager']), uploadMiddleware
     }
 
     filePath = req.file.path;
+    // 防御 path-injection：确认 filePath 仍在 uploads 目录内
+    const uploadsRoot = path.resolve(__dirname, '../uploads');
+    const resolved = path.resolve(filePath);
+    if (!resolved.startsWith(uploadsRoot + path.sep)) {
+      throw new BadRequestError('非法的上传文件路径');
+    }
+    filePath = resolved;
     const mode = req.body.mode || 'create';
     const warehouseId = req.body.warehouseId;
 

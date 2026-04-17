@@ -25,7 +25,8 @@
     "tesseract.js": "^5.0.0",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "exceljs": "^4.4.0"
+    "exceljs": "^4.4.0",
+    "express-rate-limit": "^7.4.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1",

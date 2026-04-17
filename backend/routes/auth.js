@@ -1,5 +1,6 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const rateLimit = require('express-rate-limit');
 const { User, Sequelize } = require('../models');
 const { auth } = require('../middleware/auth');
 const { asyncHandler } = require('../middleware/errorHandler');
@@ -9,7 +10,25 @@ const logger = require('../utils/logger');
 const router = express.Router();
 const { Op } = Sequelize;
 
-router.post('/login', asyncHandler(async (req, res) => {
+// 限流：登录端点最易被暴力破解
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 分钟
+  max: 20, // 每 IP 20 次/15min
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '登录尝试过于频繁，请稍后再试', code: 'RATE_LIMITED' },
+});
+
+// 限流：写入类账号操作
+const writeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: '请求过于频繁，请稍后再试', code: 'RATE_LIMITED' },
+});
+
+router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
   const { username, password } = req.body;
 
   if (!username || !password) {
@@ -54,7 +73,7 @@ router.post('/login', asyncHandler(async (req, res) => {
   });
 }));
 
-router.post('/register', auth, asyncHandler(async (req, res) => {
+router.post('/register', auth, writeLimiter, asyncHandler(async (req, res) => {
   if (req.user.role !== 'admin') {
     throw new ForbiddenError('权限不足');
   }
@@ -107,7 +126,7 @@ router.get('/profile', auth, asyncHandler(async (req, res) => {
   });
 }));
 
-router.put('/change-password', auth, asyncHandler(async (req, res) => {
+router.put('/change-password', auth, writeLimiter, asyncHandler(async (req, res) => {
   const { oldPassword, newPassword } = req.body;
 
   if (!oldPassword || !newPassword) {
