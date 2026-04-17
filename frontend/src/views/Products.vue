@@ -412,7 +412,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { apiClient } from '@/stores';
 import ExcelImportComponent from '@/components/ExcelImportComponent.vue';
 import ImageRecognitionComponent from '@/components/ImageRecognitionComponent.vue';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import type { RecognitionResult } from '@/utils/imageRecognition';
 
 const loading = ref(false);
@@ -600,12 +600,27 @@ const handleDownloadTemplate = () => {
     ];
 
     // 创建工作簿和工作表
-    const worksheet = XLSX.utils.json_to_sheet(templateData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '商品数据');
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('商品数据');
+
+    // 添加表头
+    const keys = Object.keys(templateData[0]);
+    worksheet.addRow(keys);
+
+    // 添加数据行
+    templateData.forEach((item: any) => {
+      worksheet.addRow(keys.map(k => item[k]));
+    });
 
     // 导出文件
-    XLSX.writeFile(workbook, '商品导入模板.xlsx');
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '商品导入模板.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
     ElMessage.success('模板下载成功');
   } catch (error) {
     ElMessage.error('下载模板失败');

@@ -18,7 +18,7 @@
     "tesseract.js": "^7.0.0",
     "vue": "^3.5.30",
     "vue-router": "^4.6.4",
-    "xlsx": "^0.18.5"
+    "exceljs": "^4.4.0"
   },
   "devDependencies": {
     "@types/node": "^24.12.0",

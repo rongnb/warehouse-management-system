@@ -101,7 +101,7 @@
 import { ref, reactive, computed, onMounted, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Upload, Download } from '@element-plus/icons-vue';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import type { UploadInstance } from 'element-plus';
 import { apiClient } from '@/stores';
 
@@ -164,12 +164,40 @@ const handleFileChange = (file: any) => {
 
   // 读取文件预览
   const reader = new FileReader();
-  reader.onload = (e) => {
+  reader.onload = async (e) => {
     try {
-      const data = new Uint8Array(e.target?.result as ArrayBuffer);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+      const buffer = e.target?.result as ArrayBuffer;
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(buffer);
+      const firstSheet = workbook.worksheets[0];
+
+      if (!firstSheet || firstSheet.rowCount <= 1) {
+        errorMessage.value = '文件中没有数据';
+        return;
+      }
+
+      // 将ExcelJS工作表转为JSON数组（第一行为表头）
+      const headers: string[] = [];
+      firstSheet.getRow(1).eachCell((cell: any, colNumber: number) => {
+        headers[colNumber] = cell.value ? String(cell.value).trim() : '';
+      });
+      const jsonData: any[] = [];
+      for (let rowNumber = 2; rowNumber <= firstSheet.rowCount; rowNumber++) {
+        const row = firstSheet.getRow(rowNumber);
+        const rowData: any = {};
+        let hasValue = false;
+        row.eachCell({ includeEmpty: true }, (cell: any, colNumber: number) => {
+          if (headers[colNumber]) {
+            rowData[headers[colNumber]] = cell.value;
+            if (cell.value !== null && cell.value !== undefined && cell.value !== '') {
+              hasValue = true;
+            }
+          }
+        });
+        if (hasValue) {
+          jsonData.push(rowData);
+        }
+      }
 
       // 只显示前10条
       previewData.value = jsonData.slice(0, 10);
@@ -237,12 +265,27 @@ const handleDownloadTemplate = async () => {
     ];
 
     // 创建工作簿和工作表
-    const worksheet = XLSX.utils.json_to_sheet(templateData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '商品数据');
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('商品数据');
+
+    // 添加表头
+    const keys = Object.keys(templateData[0]);
+    worksheet.addRow(keys);
+
+    // 添加数据行
+    templateData.forEach((item: any) => {
+      worksheet.addRow(keys.map(k => item[k]));
+    });
 
     // 导出文件
-    XLSX.writeFile(workbook, `商品导入模板_${props.mode === 'create' ? '新建商品' : '自动入库'}.xlsx`);
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `商品导入模板_${props.mode === 'create' ? '新建商品' : '自动入库'}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
   } catch (error) {
     ElMessage.error('下载模板失败');
   }

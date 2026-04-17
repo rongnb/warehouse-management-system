@@ -342,7 +342,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Search, Refresh } from '@element-plus/icons-vue';
 import { stocktakeApi } from '@/api/stocktake';
 import { warehousesApi } from '@/api/warehouses';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 // 定义仓库类型
 interface Warehouse {
@@ -748,12 +748,23 @@ const handleExport = async (row: any) => {
       ...rows,
     ];
 
-    const worksheet = XLSX.utils.aoa_to_sheet(summary);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '盘库报表');
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('盘库报表');
+
+    // 添加汇总数据（数组的数组）
+    summary.forEach((row: any[]) => {
+      worksheet.addRow(row);
+    });
 
     // 下载
-    XLSX.writeFile(workbook, `${data.stocktakeNo}_${data.title}.xlsx`);
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${data.stocktakeNo}_${data.title}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
     ElMessage.success('导出成功！');
   } catch (error) {
     ElMessage.error('导出失败');
