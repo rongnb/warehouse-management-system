@@ -65,6 +65,16 @@ echo.
 echo =====================================
 echo [4/7] 安装后端依赖
 echo =====================================
+
+REM 自动创建后端.env配置文件（如果不存在）
+if not exist "backend\.env" (
+    if exist "backend\.env.example" (
+        echo 📝 创建后端配置文件 backend\.env ...
+        copy /Y "backend\.env.example" "backend\.env" >nul
+        echo ✅ 配置文件已创建
+    )
+)
+
 cd backend
 if exist "node_modules" (
     echo ✅ 后端依赖已存在，跳过

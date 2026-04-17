@@ -1,14 +1,18 @@
 {
   "name": "warehouse-management-system",
-  "version": "0.0.4",
-  "description": "仓库管理系统 - 功能完善版，支持本地摄像头拍照服务器OCR识别",
+  "version": "0.0.5",
+  "description": "仓库管理系统 - 完善优化版，修复关键bug，完善跨平台安装和生产部署",
   "main": "backend/server.js",
   "scripts": {
     "dev:start": "cd backend && npm run dev",
     "start": "cd backend && npm start",
     "dev:build": "cd frontend && npm run build",
+    "build": "cd frontend && npm run build",
     "install:all": "cd backend && npm install; cd ../frontend && npm install",
-    "init-db": "cd backend && npm run init-db"
+    "init-db": "node database/init.js",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f"
   },
   "keywords": [
     "warehouse",
