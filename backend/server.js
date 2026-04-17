@@ -40,6 +40,7 @@ async function start() {
   app.use('/api/system', require('./routes/system'));
   app.use('/api/logs', require('./routes/logs'));
   app.use('/api/ocr', require('./routes/ocr'));
+  app.use('/api/reports', require('./routes/reports'));
 
   app.use(notFoundHandler);
   app.use(errorHandler);
