@@ -46,6 +46,11 @@ packages/
 
 # Uploads
 uploads/
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Test coverage
+coverage/
 
 # Claude
 .claude/
