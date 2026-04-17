@@ -426,7 +426,7 @@ import { warehousesApi } from '@/api/warehouses';
 import ImageRecognitionComponent from '@/components/ImageRecognitionComponent.vue';
 import type { RecognitionResult } from '@/utils/imageRecognition';
 import { initializeImageRecognizer } from '@/utils/imageRecognition';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 
 const loading = ref(false);
 const submitLoading = ref(false);
@@ -801,39 +801,34 @@ const handleExport = async () => {
     ]);
 
     const excelData = [headers, ...rows];
-    const worksheet = XLSX.utils.aoa_to_sheet(excelData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, '出入库记录');
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet('出入库记录');
 
-    // 设置列宽
-    const colWidths = [
-      {wch: 20}, // 交易号
-      {wch: 6},  // 类型
-      {wch: 20}, // 商品名称
-      {wch: 15}, // SKU
-      {wch: 15}, // 规格
-      {wch: 8},  // 单位
-      {wch: 15}, // 仓库
-      {wch: 10}, // 数量
-      {wch: 12}, // 单价
-      {wch: 14}, // 总金额
-      {wch: 15}, // 领用单位
-      {wch: 12}, // 领用日期
-      {wch: 12}, // 单位审批人
-      {wch: 12}, // 领用经办人
-      {wch: 10}, // 状态
-      {wch: 10}, // 创建人
-      {wch: 20}, // 创建时间
-      {wch: 25}, // 备注
-    ];
-    worksheet['!cols'] = colWidths;
+    // 添加所有行（表头 + 数据）
+    excelData.forEach((row: any[]) => {
+      worksheet.addRow(row);
+    });
+
+    // 设置列宽（ExcelJS使用width属性，约等于xlsx的wch）
+    const colWidths = [20, 6, 20, 15, 15, 8, 15, 10, 12, 14, 15, 12, 12, 12, 10, 10, 20, 25];
+    colWidths.forEach((width, index) => {
+      const col = worksheet.getColumn(index + 1);
+      col.width = width;
+    });
 
     // 生成文件名
     const timestamp = new Date().toISOString().slice(0, 10);
     const filename = `出入库记录_${timestamp}.xlsx`;
 
     // 下载
-    XLSX.writeFile(workbook, filename);
+    const buffer = await workbook.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
     ElMessage.success('导出成功！');
   } catch (error: any) {
     console.error('导出失败:', error);

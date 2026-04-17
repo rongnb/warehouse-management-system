@@ -29,12 +29,16 @@ yarn-error.log*
 
 # Build
 dist/
+dist-production/
 build/
 *.local
 
 # Database
 *.db
 *.sqlite
+
+# Offline packages
+packages/
 
 # Uploads
 uploads/

@@ -10,8 +10,6 @@ async function checkAndCreateUsers() {
   try {
     console.log('正在连接数据库...');
     await mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/warehouse', {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
     });
     console.log('✅ 数据库连接成功');
 

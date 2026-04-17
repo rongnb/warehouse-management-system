@@ -7,7 +7,7 @@ const Transaction = require('../models/Transaction');
 const { auth, requireRole } = require('../middleware/auth');
 const logger = require('../utils/logger');
 const multer = require('multer');
-const XLSX = require('xlsx');
+const ExcelJS = require('exceljs');
 const path = require('path');
 
 const router = express.Router();
@@ -480,9 +480,36 @@ router.post('/import', auth, requireRole(['admin', 'manager']), uploadMiddleware
     const warehouseId = req.body.warehouseId;
 
     // 读取Excel文件
-    const workbook = XLSX.readFile(req.file.path);
-    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
-    const jsonData = XLSX.utils.sheet_to_json(firstSheet);
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.readFile(req.file.path);
+    const firstSheet = workbook.worksheets[0];
+
+    if (!firstSheet || firstSheet.rowCount <= 1) {
+      return res.status(400).json({ message: 'Excel文件中没有数据' });
+    }
+
+    // 将ExcelJS工作表转为JSON数组（第一行为表头）
+    const headers = [];
+    firstSheet.getRow(1).eachCell((cell, colNumber) => {
+      headers[colNumber] = cell.value ? String(cell.value).trim() : '';
+    });
+    const jsonData = [];
+    for (let rowNumber = 2; rowNumber <= firstSheet.rowCount; rowNumber++) {
+      const row = firstSheet.getRow(rowNumber);
+      const rowData = {};
+      let hasValue = false;
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        if (headers[colNumber]) {
+          rowData[headers[colNumber]] = cell.value;
+          if (cell.value !== null && cell.value !== undefined && cell.value !== '') {
+            hasValue = true;
+          }
+        }
+      });
+      if (hasValue) {
+        jsonData.push(rowData);
+      }
+    }
 
     if (jsonData.length === 0) {
       return res.status(400).json({ message: 'Excel文件中没有数据' });

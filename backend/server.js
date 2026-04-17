@@ -21,10 +21,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static('uploads'));
 
 // 连接数据库
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/warehouse', {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
-})
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/warehouse')
 .then(() => logger.info('数据库连接成功'))
 .catch(err => {
   logger.error('MongoDB连接失败，使用内存模式运行:', err.message);

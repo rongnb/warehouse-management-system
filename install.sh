@@ -29,6 +29,7 @@ if [ -z "$INSTALL_MONGO_CHOICE" ]; then
 fi
 
 echo "1/4 安装基础系统依赖..."
+apt update -y
 apt install -y curl git build-essential ca-certificates gnupg lsb-release netcat-openbsd wget
 
 echo "2/4 安装Node.js 22.x 环境..."
@@ -80,6 +81,14 @@ fi
 
 echo ""
 echo "4/4 安装项目前后端依赖..."
+
+# 创建后端.env配置文件（如果不存在）
+if [ ! -f "backend/.env" ]; then
+  echo "📝 创建后端配置文件 backend/.env ..."
+  cp backend/.env.example backend/.env
+  echo "✅ 配置文件已创建，如需修改请编辑 backend/.env"
+fi
+
 cd backend && npm install
 # 修复nodemon执行权限
 chmod +x node_modules/.bin/nodemon 2>/dev/null || true
@@ -98,7 +107,7 @@ cd backend
 sleep 2
 
 # 运行数据库初始化
-node init-db.js
+node ../database/init.js
 
 cd ..
 

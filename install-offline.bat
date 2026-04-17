@@ -88,6 +88,14 @@ if exist "packages\frontend\package-lock.json" (
 
 echo ✅ 配置文件已同步
 
+REM 创建后端.env配置文件（如果不存在）
+if not exist "backend\.env" (
+    if exist "backend\.env.example" (
+        copy /Y "backend\.env.example" "backend\.env" >nul
+        echo ✅ 创建了 backend\.env 配置文件
+    )
+)
+
 echo.
 echo =====================================
 echo [4/4] 初始化数据库

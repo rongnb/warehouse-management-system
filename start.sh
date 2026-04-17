@@ -98,8 +98,6 @@ if (fs.existsSync(envPath)) {
 console.log('🔗 连接字符串:', mongoUri);
 
 mongoose.connect(mongoUri, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true,
   serverSelectionTimeoutMS: 3000,
 })
 .then(() => {
