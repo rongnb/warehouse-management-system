@@ -1,52 +1,62 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
 
-const systemConfigSchema = new mongoose.Schema({
-  // 盘库频率：monthly/quarterly/half_year/yearly，默认一季度一次
-  stocktakeFrequency: {
-    type: String,
-    enum: ['monthly', 'quarterly', 'half_year', 'yearly'],
-    default: 'quarterly',
-  },
-  // 盘库提醒提前天数
-  stocktakeReminderDays: {
-    type: Number,
-    default: 7,
-  },
-  // 自动生成盘库任务
-  autoGenerateStocktake: {
-    type: Boolean,
-    default: true,
-  },
-  // 库存预警阈值
-  stockWarningThreshold: {
-    type: Number,
-    default: 10,
-  },
-  // 系统名称
-  systemName: {
-    type: String,
-    default: '仓库管理系统',
-  },
-  // 管理员设置的其他配置
-  settings: {
-    type: Object,
-    default: {},
-  },
-  updatedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-  },
-}, {
-  timestamps: true,
-});
+module.exports = (sequelize) => {
+  const SystemConfig = sequelize.define('SystemConfig', {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
+    stocktakeFrequency: {
+      type: DataTypes.ENUM('monthly', 'quarterly', 'half_year', 'yearly'),
+      defaultValue: 'quarterly',
+    },
+    stocktakeReminderDays: {
+      type: DataTypes.INTEGER,
+      defaultValue: 7,
+    },
+    autoGenerateStocktake: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    stockWarningThreshold: {
+      type: DataTypes.INTEGER,
+      defaultValue: 10,
+    },
+    systemName: {
+      type: DataTypes.STRING,
+      defaultValue: '仓库管理系统',
+    },
+    settings: {
+      type: DataTypes.JSON,
+      defaultValue: {},
+    },
+    updatedBy: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+    },
+  }, {
+    tableName: 'system_configs',
+    timestamps: true,
+  });
 
-// 单例模式，确保只有一条配置记录
-systemConfigSchema.statics.getInstance = async function() {
-  let config = await this.findOne();
-  if (!config) {
-    config = await this.create({});
-  }
-  return config;
+  SystemConfig.getInstance = async function() {
+    let config = await this.findOne();
+    if (!config) {
+      config = await this.create({});
+    }
+    return config;
+  };
+
+  SystemConfig.prototype.toJSON = function() {
+    const values = Object.assign({}, this.get());
+    values._id = values.id;
+    return values;
+  };
+
+  return SystemConfig;
 };
-
-module.exports = mongoose.model('SystemConfig', systemConfigSchema);

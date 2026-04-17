@@ -1,51 +1,69 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
 
-const categorySchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  code: {
-    type: String,
-    required: true,
-    unique: true,
-    uppercase: true,
-    trim: true,
-  },
-  parentId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Category',
-    default: null,
-  },
-  description: {
-    type: String,
-    default: '',
-  },
-  sort: {
-    type: Number,
-    default: 0,
-  },
-  status: {
-    type: Boolean,
-    default: true,
-  },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-  },
-}, {
-  timestamps: true,
-});
+module.exports = (sequelize) => {
+  const Category = sequelize.define('Category', {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        notEmpty: true,
+      },
+    },
+    code: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      validate: {
+        notEmpty: true,
+      },
+      set(value) {
+        this.setDataValue('code', value ? value.toUpperCase() : value);
+      },
+    },
+    parentId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      defaultValue: null,
+      references: {
+        model: 'categories',
+        key: 'id',
+      },
+    },
+    description: {
+      type: DataTypes.STRING,
+      defaultValue: '',
+    },
+    sort: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+    },
+    status: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    createdBy: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+    },
+  }, {
+    tableName: 'categories',
+    timestamps: true,
+  });
 
-// 虚拟字段：子分类
-categorySchema.virtual('children', {
-  ref: 'Category',
-  localField: '_id',
-  foreignField: 'parentId',
-});
+  Category.prototype.toJSON = function() {
+    const values = Object.assign({}, this.get());
+    values._id = values.id;
+    return values;
+  };
 
-categorySchema.set('toObject', { virtuals: true });
-categorySchema.set('toJSON', { virtuals: true });
-
-module.exports = mongoose.model('Category', categorySchema);
+  return Category;
+};

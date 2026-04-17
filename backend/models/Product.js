@@ -1,95 +1,144 @@
-const mongoose = require('mongoose');
+const { DataTypes } = require('sequelize');
 
-const productSchema = new mongoose.Schema({
-  name: {
-    type: String,
-    required: true,
-    trim: true,
-  },
-  sku: {
-    type: String,
-    required: true,
-    unique: true,
-    uppercase: true,
-    trim: true,
-  },
-  category: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Category',
-  },
-  supplier: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Supplier',
-  },
-  description: {
-    type: String,
-    default: '',
-  },
-  specification: {
-    type: String,
-    default: '',
-  },
-  modelName: {
-    type: String,
-    default: '',
-  },
-  manufacturer: {
-    type: String,
-    default: '',
-  },
-  unit: {
-    type: String,
-    required: true,
-    default: '个',
-  },
-  price: {
-    type: Number,
-    required: true,
-    min: 0,
-    default: 0,
-  },
-  costPrice: {
-    type: Number,
-    required: true,
-    min: 0,
-    default: 0,
-  },
-  image: {
-    type: String,
-    default: '',
-  },
-  status: {
-    type: Boolean,
-    default: true,
-  },
-  minStock: {
-    type: Number,
-    default: 0,
-    min: 0,
-  },
-  maxStock: {
-    type: Number,
-    default: 99999,
-    min: 0,
-  },
-  remark: {
-    type: String,
-    default: '',
-  },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-  },
-  updatedBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-  },
-}, {
-  timestamps: true,
-});
+module.exports = (sequelize) => {
+  const Product = sequelize.define('Product', {
+    id: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      autoIncrement: true,
+    },
+    name: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      validate: {
+        notEmpty: true,
+      },
+    },
+    sku: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      unique: true,
+      validate: {
+        notEmpty: true,
+      },
+      set(value) {
+        this.setDataValue('sku', value ? value.toUpperCase() : value);
+      },
+    },
+    categoryId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'categories',
+        key: 'id',
+      },
+    },
+    supplierId: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'suppliers',
+        key: 'id',
+      },
+    },
+    description: {
+      type: DataTypes.TEXT,
+      defaultValue: '',
+    },
+    specification: {
+      type: DataTypes.STRING,
+      defaultValue: '',
+    },
+    modelName: {
+      type: DataTypes.STRING,
+      defaultValue: '',
+    },
+    manufacturer: {
+      type: DataTypes.STRING,
+      defaultValue: '',
+    },
+    unit: {
+      type: DataTypes.STRING,
+      allowNull: false,
+      defaultValue: '个',
+    },
+    price: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+      validate: {
+        min: 0,
+      },
+    },
+    costPrice: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: false,
+      defaultValue: 0,
+      validate: {
+        min: 0,
+      },
+    },
+    image: {
+      type: DataTypes.STRING,
+      defaultValue: '',
+    },
+    status: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: true,
+    },
+    minStock: {
+      type: DataTypes.INTEGER,
+      defaultValue: 0,
+      validate: {
+        min: 0,
+      },
+    },
+    maxStock: {
+      type: DataTypes.INTEGER,
+      defaultValue: 99999,
+      validate: {
+        min: 0,
+      },
+    },
+    remark: {
+      type: DataTypes.TEXT,
+      defaultValue: '',
+    },
+    createdBy: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+    },
+    updatedBy: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'users',
+        key: 'id',
+      },
+    },
+  }, {
+    tableName: 'products',
+    timestamps: true,
+    indexes: [
+      {
+        fields: ['name'],
+      },
+      {
+        unique: true,
+        fields: ['sku'],
+      },
+    ],
+  });
 
-// 索引
-productSchema.index({ name: 1 });
-productSchema.index({ sku: 1 }, { unique: true });
+  Product.prototype.toJSON = function() {
+    const values = Object.assign({}, this.get());
+    values._id = values.id;
+    return values;
+  };
 
-module.exports = mongoose.model('Product', productSchema);
+  return Product;
+};
