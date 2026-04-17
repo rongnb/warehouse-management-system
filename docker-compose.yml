@@ -36,6 +36,9 @@ services:
     volumes:
       - backend_uploads:/app/uploads
       - backend_logs:/app/logs
+      # OCR训练数据持久化（可挂载自定义traineddata）
+      - ./backend/chi_sim.traineddata:/app/chi_sim.traineddata:ro
+      - ./backend/eng.traineddata:/app/eng.traineddata:ro
     networks:
       - wms-network
 

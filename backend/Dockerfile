@@ -11,6 +11,10 @@ RUN npm ci --only=production
 # 复制源代码
 COPY . .
 
+# 复制OCR训练数据文件（离线识别支持）
+# 如果存在本地traineddata文件则使用本地版本
+COPY chi_sim.traineddata eng.traineddata ./
+
 # 创建上传目录和日志目录
 RUN mkdir -p uploads logs
 

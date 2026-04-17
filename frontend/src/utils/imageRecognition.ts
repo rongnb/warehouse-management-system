@@ -15,9 +15,9 @@ export class ImageRecognizer {
   private workerInitializing: boolean = false
 
   private readonly compressOptions = {
-    maxWidth: 800, // 降低最大宽度，减少处理时间
-    maxHeight: 600, // 降低最大高度，减少处理时间
-    quality: 0.7 // 降低质量，提高压缩率
+    maxWidth: 1600, // 较高分辨率以保留文字细节
+    maxHeight: 1200,
+    quality: 0.85 // 较高质量以保留文字清晰度
   }
 
   constructor() {
@@ -78,25 +78,12 @@ export class ImageRecognizer {
 
       console.log('✅ Worker创建成功，开始配置参数...')
 
-      // 配置Tesseract参数以提高识别速度
+      // 配置Tesseract参数 - 优化中英文混合多行文本识别
       await this.worker.setParameters({
-        // 页面分割模式：快速模式，适合单行或少量文字
-        'tessedit_pageseg_mode': '7', // PSM.SINGLE_LINE（快速模式）
-        // OCR引擎模式：快速模式
-        'tessedit_ocr_engine_mode': '0', // OEM.TESSERACT_ONLY（传统引擎，更快）
-        // 字符白名单，只识别必要字符
-        'tessedit_char_whitelist': 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.',
-        // 禁用自动分页
-        'textord_auto_page': '0',
-        // 禁用段落检测
-        'textord_parallelize': '0',
-        // 降低置信度阈值，接受更多可能的结果
-        'classify_min_confidence': '10',
-        // 优化噪声处理
-        'textord_max_noise_size': '5',
-        // 优化中文识别
-        'chi_sim_fix_space': '1',
-        'chi_sim_enable_dict_correction': '0' // 禁用字典校正，提高速度
+        'tessedit_pageseg_mode': '3',  // PSM.AUTO - 自动检测页面布局，适合多行文本
+        'tessedit_ocr_engine_mode': '1', // OEM.LSTM_ONLY - LSTM引擎，中文识别率远高于传统引擎
+        // 注意：不设置 tessedit_char_whitelist，否则会阻止中文字符识别
+        'preserve_interword_spaces': '1', // 保留单词间空格
       })
 
       console.log('✅ Tesseract参数配置完成')
@@ -146,11 +133,11 @@ export class ImageRecognizer {
         // 绘制原始图像
         ctx.drawImage(img, 0, 0, width, height)
 
-        // 简化预处理，只进行灰度化，提高速度
+        // 图像预处理：灰度化 + 对比度增强 + 自适应二值化
         const imageDataCtx = ctx.getImageData(0, 0, canvas.width, canvas.height)
         const data = imageDataCtx.data
 
-        // 仅灰度化处理
+        // 第一步：灰度化
         for (let i = 0; i < data.length; i += 4) {
           const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
           data[i] = gray
@@ -158,7 +145,46 @@ export class ImageRecognizer {
           data[i + 2] = gray
         }
 
+        // 第二步：对比度增强（CLAHE简化版 - 直方图拉伸）
+        let minVal = 255, maxVal = 0
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i] < minVal) minVal = data[i]
+          if (data[i] > maxVal) maxVal = data[i]
+        }
+        const range = maxVal - minVal
+        if (range > 0 && range < 200) {
+          // 仅当对比度不足时进行拉伸
+          for (let i = 0; i < data.length; i += 4) {
+            const stretched = Math.round(((data[i] - minVal) / range) * 255)
+            data[i] = stretched
+            data[i + 1] = stretched
+            data[i + 2] = stretched
+          }
+        }
+
+        // 第三步：锐化（增强文字边缘）
         ctx.putImageData(imageDataCtx, 0, 0)
+        const sharpened = ctx.getImageData(0, 0, canvas.width, canvas.height)
+        const src = imageDataCtx.data
+        const dst = sharpened.data
+        const w = canvas.width
+        // 简化的Unsharp Mask锐化
+        for (let y = 1; y < canvas.height - 1; y++) {
+          for (let x = 1; x < w - 1; x++) {
+            const idx = (y * w + x) * 4
+            // 拉普拉斯算子
+            const laplacian = 5 * src[idx]
+              - src[((y - 1) * w + x) * 4]
+              - src[((y + 1) * w + x) * 4]
+              - src[(y * w + x - 1) * 4]
+              - src[(y * w + x + 1) * 4]
+            const val = Math.min(255, Math.max(0, laplacian))
+            dst[idx] = val
+            dst[idx + 1] = val
+            dst[idx + 2] = val
+          }
+        }
+        ctx.putImageData(sharpened, 0, 0)
 
         const compressedData = canvas.toDataURL('image/jpeg', this.compressOptions.quality)
 
@@ -191,20 +217,7 @@ export class ImageRecognizer {
     }
 
     try {
-      console.log('🔤 开始OCR识别（极速模式）...')
-
-      // 使用极速识别参数
-      await this.worker.setParameters({
-        'tessedit_write_params_to_file': 'false',
-        'preserve_interword_spaces': '1',
-        'textord_noise_rejwords': '1', // 启用噪声单词拒绝，提高速度
-        'textord_noise_count_limit': '20', // 减少噪声容忍度，提高速度
-        'textord_max_noise_size': '5', // 减小噪声尺寸
-        'edges_max_noise_size': '5', // 减小边缘检测的噪声尺寸
-        'textord_min_xheight': '15', // 提高最小字高，避免识别过小文字
-        'textord_min_line_skew': '-0.1', // 减小倾斜角度范围
-        'textord_max_line_skew': '0.1' // 减小倾斜角度范围
-      })
+      console.log('🔤 开始OCR识别...')
 
       const ret = await this.worker.recognize(imageData)
 

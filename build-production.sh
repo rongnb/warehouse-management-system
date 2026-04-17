@@ -146,6 +146,13 @@ cp stop.sh "$DIST_DIR/" 2>/dev/null || true
 cp start.bat "$DIST_DIR/" 2>/dev/null || true
 cp stop.bat "$DIST_DIR/" 2>/dev/null || true
 
+# 复制Docker部署文件
+cp docker-compose.yml "$DIST_DIR/" 2>/dev/null || true
+cp backend/Dockerfile "$DIST_DIR/backend/Dockerfile" 2>/dev/null || true
+mkdir -p "$DIST_DIR/frontend-docker"
+cp frontend/Dockerfile "$DIST_DIR/frontend-docker/Dockerfile" 2>/dev/null || true
+cp frontend/nginx.conf "$DIST_DIR/frontend-docker/nginx.conf" 2>/dev/null || true
+
 # 创建生产启动脚本
 cat > "$DIST_DIR/start-production.sh" << 'SCRIPT'
 #!/bin/bash

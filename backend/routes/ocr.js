@@ -69,25 +69,33 @@ async function initializeWorker() {
   logger.info('🔧 开始初始化Tesseract Worker...');
 
   try {
-    const worker = await Tesseract.createWorker('chi_sim+eng', 1, {
+    // 检查本地traineddata文件路径（支持离线识别）
+    const langPath = path.join(__dirname, '..');
+    const hasLocalData = fs.existsSync(path.join(langPath, 'chi_sim.traineddata'))
+      && fs.existsSync(path.join(langPath, 'eng.traineddata'));
+
+    const workerOptions = {
       logger: (m) => {
         if (m.progress) {
           logger.debug(`[Tesseract] ${m.status} ${Math.round(m.progress * 100)}%`);
         }
       }
-    });
+    };
 
-    // 配置识别参数 - 假设是一块文本，适合商品标签
+    // 离线模式：指定本地训练数据路径
+    if (hasLocalData) {
+      workerOptions.langPath = langPath;
+      logger.info('📂 使用本地traineddata文件（离线模式）');
+    }
+
+    const worker = await Tesseract.createWorker('chi_sim+eng', 1, workerOptions);
+
+    // 配置识别参数 - 优化中英文混合多行文本识别
     await worker.setParameters({
-      'tessedit_pageseg_mode': '6', // PSM.SINGLE_BLOCK (假设一块统一文本，适合商品标签)
-      'tessedit_ocr_engine_mode': '0', // OEM.TESSERACT_ONLY
-      'tessedit_char_whitelist': 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.\n ',
-      'textord_auto_page': '0',
-      'textord_parallelize': '0',
-      'classify_min_confidence': '10',
-      'textord_max_noise_size': '5',
-      'chi_sim_fix_space': '1',
-      'chi_sim_enable_dict_correction': '0',
+      'tessedit_pageseg_mode': '3',  // PSM.AUTO - 自动检测页面布局，适合多行文本
+      'tessedit_ocr_engine_mode': '1', // OEM.LSTM_ONLY - LSTM引擎，中文识别率远高于传统引擎
+      // 注意：不设置 tessedit_char_whitelist，否则会阻止中文字符识别
+      'preserve_interword_spaces': '1', // 保留单词间空格
     });
 
     workerInstance = worker;
