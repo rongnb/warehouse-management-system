@@ -1,18 +1,18 @@
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const { User } = require('../models');
 
 const auth = async (req, res, next) => {
   try {
-    // 从请求头获取token
     const token = req.header('Authorization')?.replace('Bearer ', '');
     
     if (!token) {
       return res.status(401).json({ message: '请先登录' });
     }
 
-    // 验证token
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'warehouse-management-system-jwt-secret-key-2024');
-    const user = await User.findById(decoded.userId).select('-password');
+    const user = await User.findByPk(decoded.userId, {
+      attributes: { exclude: ['password'] }
+    });
     
     if (!user) {
       return res.status(401).json({ message: 'token无效' });
@@ -25,7 +25,6 @@ const auth = async (req, res, next) => {
   }
 };
 
-// 权限验证中间件
 const requireRole = (roles) => {
   return (req, res, next) => {
     if (!roles.includes(req.user.role)) {

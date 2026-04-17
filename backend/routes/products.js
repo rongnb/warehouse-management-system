@@ -1,22 +1,20 @@
 const express = require('express');
-const Product = require('../models/Product');
-const Inventory = require('../models/Inventory');
-const Category = require('../models/Category');
-const Supplier = require('../models/Supplier');
-const Transaction = require('../models/Transaction');
+const { Product, Inventory, Category, Supplier, Transaction, User, sequelize, Sequelize } = require('../models');
 const { auth, requireRole } = require('../middleware/auth');
+const { asyncHandler } = require('../middleware/errorHandler');
+const { BadRequestError, NotFoundError, ConflictError } = require('../errors/AppError');
 const logger = require('../utils/logger');
 const multer = require('multer');
 const ExcelJS = require('exceljs');
 const path = require('path');
+const fs = require('fs');
 
 const router = express.Router();
+const { Op } = Sequelize;
 
-// 配置multer处理文件上传
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     const uploadPath = path.join(__dirname, '../uploads');
-    const fs = require('fs');
     if (!fs.existsSync(uploadPath)) {
       fs.mkdirSync(uploadPath, { recursive: true });
     }
@@ -40,413 +38,354 @@ const upload = multer({
     }
   },
   limits: {
-    fileSize: 10 * 1024 * 1024, // 10MB限制
+    fileSize: 10 * 1024 * 1024,
   },
 });
 
-// 获取商品下拉列表
-router.get('/options/list', auth, async (req, res) => {
-  try {
-    const products = await Product.find({ status: true })
-      .select('name sku unit price')
-      .sort({ name: 1 });
+router.get('/options/list', auth, asyncHandler(async (req, res) => {
+  const products = await Product.findAll({
+    where: { status: true },
+    attributes: ['id', 'name', 'sku', 'unit', 'price'],
+    order: [['name', 'ASC']],
+    raw: true,
+  });
 
-    // 统一数据格式，添加id字段
-    const formattedProducts = products.map(p => ({
-      ...p.toObject(),
-      id: p._id,
-    }));
+  const formattedProducts = products.map(p => ({
+    ...p,
+    id: p.id,
+  }));
 
-    res.json({ products: formattedProducts });
-  } catch (error) {
-    logger.error('获取商品列表失败:', error);
-    res.status(500).json({ message: '获取商品列表失败', error: error.message });
+  res.json({ products: formattedProducts });
+}));
+
+router.get('/options', auth, asyncHandler(async (req, res) => {
+  const products = await Product.findAll({
+    where: { status: true },
+    attributes: ['id', 'name', 'sku', 'unit', 'price'],
+    order: [['name', 'ASC']],
+    raw: true,
+  });
+
+  const formattedProducts = products.map(p => ({
+    ...p,
+    id: p.id,
+  }));
+
+  res.json({ products: formattedProducts });
+}));
+
+router.get('/', auth, asyncHandler(async (req, res) => {
+  const {
+    page = 1,
+    limit = 10,
+    keyword,
+    category,
+    supplier,
+    status
+  } = req.query;
+
+  const where = {};
+
+  if (keyword) {
+    where[Op.or] = [
+      { name: { [Op.like]: `%${keyword}%` } },
+      { sku: { [Op.like]: `%${keyword}%` } },
+    ];
   }
-});
 
-// 获取商品下拉列表（别名，兼容前端调用）
-router.get('/options', auth, async (req, res) => {
-  try {
-    const products = await Product.find({ status: true })
-      .select('name sku unit price')
-      .sort({ name: 1 });
-
-    // 统一数据格式，添加id字段
-    const formattedProducts = products.map(p => ({
-      ...p.toObject(),
-      id: p._id,
-    }));
-
-    res.json({ products: formattedProducts });
-  } catch (error) {
-    logger.error('获取商品列表失败:', error);
-    res.status(500).json({ message: '获取商品列表失败', error: error.message });
+  if (category) {
+    where.categoryId = category;
   }
-});
 
-// 获取商品列表
-router.get('/', auth, async (req, res) => {
-  try {
-    const {
-      page = 1,
-      limit = 10,
-      keyword,
-      category,
-      supplier,
-      status
-    } = req.query;
-
-    const query = {};
-
-    if (keyword) {
-      query.$or = [
-        { name: { $regex: keyword, $options: 'i' } },
-        { sku: { $regex: keyword, $options: 'i' } },
-      ];
-    }
-
-    if (category) {
-      query.category = category;
-    }
-
-    if (supplier) {
-      query.supplier = supplier;
-    }
-
-    if (status !== undefined) {
-      query.status = status === 'true';
-    }
-
-    // 获取商品列表
-    const products = await Product.find(query)
-      .populate('category', 'name')
-      .populate('supplier', 'name')
-      .populate('createdBy', 'realName')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    const total = await Product.countDocuments(query);
-
-    // 获取所有商品ID，批量查询库存
-    const productIds = products.map(p => p._id);
-    const inventoryResults = await Inventory.aggregate([
-      { $match: { product: { $in: productIds } } },
-      { $group: { _id: '$product', totalQuantity: { $sum: '$quantity' } } }
-    ]);
-
-    // 将库存结果转为Map，方便查找
-    const inventoryMap = new Map();
-    inventoryResults.forEach(item => {
-      inventoryMap.set(item._id.toString(), item.totalQuantity);
-    });
-
-    // 统一数据格式，添加id字段和库存
-    const formattedProducts = products.map(p => {
-      const productObj = p.toObject();
-      productObj.id = productObj._id;
-      // 处理关联字段的显示
-      productObj.categoryName = productObj.category?.name || '';
-      productObj.supplierName = productObj.supplier?.name || '';
-      productObj.createdByName = productObj.createdBy?.realName || '';
-
-      // 从Map中获取库存
-      productObj.stock = inventoryMap.get(p._id.toString()) || 0;
-
-      return productObj;
-    });
-
-    res.json({
-      products: formattedProducts,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit),
-      },
-    });
-  } catch (error) {
-    logger.error('获取商品列表失败:', error);
-    res.status(500).json({ message: '获取商品列表失败', error: error.message });
+  if (supplier) {
+    where.supplierId = supplier;
   }
-});
 
-// 获取单个商品详情
-router.get('/:id', auth, async (req, res) => {
-  try {
-    // 检查是否是有效的ObjectId格式
-    if (!/^[0-9a-fA-F]{24}$/.test(req.params.id)) {
-      logger.warn('无效的商品ID格式', { productId: req.params.id });
-      return res.status(404).json({ message: '商品不存在' });
-    }
+  if (status !== undefined) {
+    where.status = status === 'true';
+  }
 
-    const product = await Product.findById(req.params.id)
-      .populate('category', 'name')
-      .populate('supplier', 'name');
+  const offset = (page - 1) * limit;
+  const { count: total, rows: products } = await Product.findAndCountAll({
+    where,
+    include: [
+      { model: Category, as: 'category', attributes: ['id', 'name'], required: false },
+      { model: Supplier, as: 'supplier', attributes: ['id', 'name'], required: false },
+      { model: User, as: 'createdByUser', attributes: ['realName'], required: false },
+    ],
+    order: [['createdAt', 'DESC']],
+    limit: parseInt(limit),
+    offset,
+  });
 
-    if (!product) {
-      logger.warn('商品不存在', { productId: req.params.id });
-      return res.status(404).json({ message: '商品不存在' });
-    }
+  const productIds = products.map(p => p.id);
+  const inventoryResults = await Inventory.findAll({
+    where: { productId: { [Op.in]: productIds } },
+    attributes: [
+      'productId',
+      [sequelize.fn('SUM', sequelize.col('quantity')), 'totalQuantity'],
+    ],
+    group: ['productId'],
+    raw: true,
+  });
 
-    const productObj = product.toObject();
+  const inventoryMap = new Map();
+  inventoryResults.forEach(item => {
+    inventoryMap.set(item.productId, item.totalQuantity || 0);
+  });
+
+  const formattedProducts = products.map(p => {
+    const productObj = p.toJSON();
     productObj.id = productObj._id;
+    productObj.categoryName = productObj.category?.name || '';
+    productObj.supplierName = productObj.supplier?.name || '';
+    productObj.createdByName = productObj.createdByUser?.realName || '';
+    productObj.stock = inventoryMap.get(p.id) || 0;
+    return productObj;
+  });
 
-    // 计算总库存
-    const inventory = await Inventory.aggregate([
-      { $match: { product: productObj._id } },
-      { $group: { _id: null, totalQuantity: { $sum: '$quantity' } } }
-    ]);
+  res.json({
+    products: formattedProducts,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / limit),
+    },
+  });
+}));
 
-    productObj.stock = inventory.length > 0 ? inventory[0].totalQuantity : 0;
+router.get('/:id', auth, asyncHandler(async (req, res) => {
+  const product = await Product.findByPk(req.params.id, {
+    include: [
+      { model: Category, as: 'category', attributes: ['name'], required: false },
+      { model: Supplier, as: 'supplier', attributes: ['name'], required: false },
+    ],
+  });
 
-    res.json({ product: productObj });
-  } catch (error) {
-    logger.error('获取商品详情失败:', error);
-    res.status(500).json({ message: '获取商品详情失败', error: error.message });
+  if (!product) {
+    throw new NotFoundError('商品不存在');
   }
-});
 
-// 创建商品
-router.post('/', auth, requireRole(['admin', 'manager']), async (req, res) => {
-  try {
-    logger.info('开始创建商品', {
-      userId: req.user._id,
-      requestBody: req.body
-    });
+  const productObj = product.toJSON();
+  productObj.id = productObj._id;
 
-    const {
-      name,
-      sku,
-      category,
-      supplier,
-      description,
-      specification,
-      modelName,
-      manufacturer,
-      unit,
-      price,
-      costPrice,
-      minStock,
-      maxStock,
-      status,
-      remark
-    } = req.body;
+  const inventory = await Inventory.findAll({
+    where: { productId: productObj.id },
+    attributes: [[sequelize.fn('SUM', sequelize.col('quantity')), 'totalQuantity']],
+    raw: true,
+  });
 
-    // 自动生成SKU（如果未提供）
-    let finalSku = sku;
-    if (!finalSku || finalSku.trim() === '') {
-      // 生成基于时间戳的SKU
-      const timestamp = Date.now().toString().slice(-8);
-      const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-      finalSku = `PROD${timestamp}${random}`;
-      logger.info('自动生成SKU', { finalSku });
+  productObj.stock = inventory.length > 0 && inventory[0].totalQuantity ? inventory[0].totalQuantity : 0;
+
+  res.json({ product: productObj });
+}));
+
+router.post('/', auth, requireRole(['admin', 'manager']), asyncHandler(async (req, res) => {
+  logger.info('开始创建商品', {
+    userId: req.user.id,
+    requestBody: req.body
+  });
+
+  const {
+    name,
+    sku,
+    category,
+    supplier,
+    description,
+    specification,
+    modelName,
+    manufacturer,
+    unit,
+    price,
+    costPrice,
+    minStock,
+    maxStock,
+    status,
+    remark
+  } = req.body;
+
+  let finalSku = sku;
+  if (!finalSku || finalSku.trim() === '') {
+    const timestamp = Date.now().toString().slice(-8);
+    const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    finalSku = `PROD${timestamp}${random}`;
+    logger.info('自动生成SKU', { finalSku });
+  }
+
+  logger.info('检查SKU是否已存在', { sku: finalSku });
+  const existingProduct = await Product.findOne({ where: { sku: finalSku } });
+  if (existingProduct) {
+    logger.warn('SKU已存在', { sku: finalSku });
+    throw new BadRequestError('商品SKU已存在');
+  }
+
+  let finalCategory = category;
+  if (!finalCategory || finalCategory.trim() === '') {
+    let defaultCategory = await Category.findOne();
+    if (!defaultCategory) {
+      defaultCategory = await Category.create({
+        name: '默认分类',
+        code: 'DEFAULT',
+        description: '系统默认分类',
+      });
+      logger.info('创建默认分类', { categoryId: defaultCategory.id });
     }
+    finalCategory = defaultCategory.id;
+  }
 
-    // 检查SKU是否已存在
-    logger.info('检查SKU是否已存在', { sku: finalSku });
-    const existingProduct = await Product.findOne({ sku: finalSku });
+  let finalSupplier = supplier;
+  if (!finalSupplier || finalSupplier.trim() === '') {
+    let defaultSupplier = await Supplier.findOne();
+    if (!defaultSupplier) {
+      defaultSupplier = await Supplier.create({
+        name: '默认供应商',
+        code: 'DEFAULT',
+        contact: '系统默认',
+        phone: '13800138000',
+        level: 'B',
+      });
+      logger.info('创建默认供应商', { supplierId: defaultSupplier.id });
+    }
+    finalSupplier = defaultSupplier.id;
+  }
+
+  const product = await Product.create({
+    name,
+    sku: finalSku,
+    categoryId: finalCategory,
+    supplierId: finalSupplier,
+    description,
+    specification,
+    modelName,
+    manufacturer,
+    unit,
+    price,
+    costPrice,
+    minStock,
+    maxStock,
+    status: status !== undefined ? status : true,
+    remark,
+    createdBy: req.user.id,
+    updatedBy: req.user.id,
+  });
+
+  logger.info('准备重新加载商品关联', { productName: name });
+  await product.reload({
+    include: [
+      { model: Category, as: 'category', attributes: ['name'], required: false },
+      { model: Supplier, as: 'supplier', attributes: ['name'], required: false },
+    ],
+  });
+  logger.info('商品创建成功', { productId: product.id, productName: name });
+
+  res.status(201).json({
+    message: '商品创建成功',
+    id: product.id,
+    product,
+  });
+}));
+
+router.put('/:id', auth, requireRole(['admin', 'manager']), asyncHandler(async (req, res) => {
+  logger.info('开始更新商品', {
+    productId: req.params.id,
+    userId: req.user.id,
+    requestBody: req.body
+  });
+
+  const product = await Product.findByPk(req.params.id);
+  if (!product) {
+    logger.warn('商品不存在', { productId: req.params.id });
+    throw new NotFoundError('商品不存在');
+  }
+
+  const {
+    name,
+    sku,
+    category,
+    supplier,
+    description,
+    specification,
+    unit,
+    price,
+    costPrice,
+    minStock,
+    maxStock,
+    status,
+    remark
+  } = req.body;
+
+  if (sku && sku !== product.sku) {
+    logger.info('检查SKU是否重复', { newSku: sku, oldSku: product.sku });
+    const existingProduct = await Product.findOne({ where: { sku } });
     if (existingProduct) {
-      logger.warn('SKU已存在', { sku: finalSku });
-      return res.status(400).json({ message: '商品SKU已存在' });
+      logger.warn('SKU已存在', { sku });
+      throw new BadRequestError('商品SKU已存在');
     }
-
-    // 查找或创建默认分类
-    let finalCategory = category;
-    if (!finalCategory || finalCategory.trim() === '') {
-      let defaultCategory = await Category.findOne();
-      if (!defaultCategory) {
-        defaultCategory = new Category({
-          name: '默认分类',
-          code: 'DEFAULT',
-          description: '系统默认分类',
-        });
-        await defaultCategory.save();
-        logger.info('创建默认分类', { categoryId: defaultCategory._id });
-      }
-      finalCategory = defaultCategory._id;
-    }
-
-    // 查找或创建默认供应商
-    let finalSupplier = supplier;
-    if (!finalSupplier || finalSupplier.trim() === '') {
-      let defaultSupplier = await Supplier.findOne();
-      if (!defaultSupplier) {
-        defaultSupplier = new Supplier({
-          name: '默认供应商',
-          code: 'DEFAULT',
-          contact: '系统默认',
-          phone: '13800138000',
-          level: 'B',
-        });
-        await defaultSupplier.save();
-        logger.info('创建默认供应商', { supplierId: defaultSupplier._id });
-      }
-      finalSupplier = defaultSupplier._id;
-    }
-
-    const product = new Product({
-      name,
-      sku: finalSku,
-      category: finalCategory,
-      supplier: finalSupplier,
-      description,
-      specification,
-      modelName,
-      manufacturer,
-      unit,
-      price,
-      costPrice,
-      minStock,
-      maxStock,
-      status: status !== undefined ? status : true,
-      remark,
-      createdBy: req.user._id,
-      updatedBy: req.user._id,
-    });
-
-    logger.info('准备保存新商品', { productName: name });
-    await product.save();
-    await product.populate('category supplier', 'name');
-    logger.info('商品创建成功', { productId: product._id, productName: name });
-
-    res.status(201).json({
-      message: '商品创建成功',
-      id: product._id,
-      product,
-    });
-  } catch (error) {
-    logger.error('创建商品失败', {
-      userId: req.user._id,
-      requestBody: req.body,
-      error: error.message,
-      stack: error.stack
-    });
-    res.status(500).json({ message: '创建商品失败', error: error.message });
   }
-});
 
-// 更新商品
-router.put('/:id', auth, requireRole(['admin', 'manager']), async (req, res) => {
-  try {
-    logger.info('开始更新商品', {
-      productId: req.params.id,
-      userId: req.user._id,
-      requestBody: req.body
-    });
+  if (name !== undefined) product.name = name;
+  if (sku !== undefined) product.sku = sku;
+  if (category !== undefined) product.categoryId = category;
+  if (supplier !== undefined) product.supplierId = supplier;
+  if (description !== undefined) product.description = description;
+  if (specification !== undefined) product.specification = specification;
+  if (unit !== undefined) product.unit = unit;
+  if (price !== undefined) product.price = price;
+  if (costPrice !== undefined) product.costPrice = costPrice;
+  if (minStock !== undefined) product.minStock = minStock;
+  if (maxStock !== undefined) product.maxStock = maxStock;
+  if (status !== undefined) product.status = status;
+  if (remark !== undefined) product.remark = remark;
 
-    // 检查是否是有效的ObjectId格式
-    if (!/^[0-9a-fA-F]{24}$/.test(req.params.id)) {
-      logger.warn('无效的商品ID格式', { productId: req.params.id });
-      return res.status(404).json({ message: '商品不存在' });
-    }
+  product.updatedBy = req.user.id;
 
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-      logger.warn('商品不存在', { productId: req.params.id });
-      return res.status(404).json({ message: '商品不存在' });
-    }
+  logger.info('准备保存商品', { productId: req.params.id });
+  await product.save();
+  
+  await product.reload({
+    include: [
+      { model: Category, as: 'category', attributes: ['name'], required: false },
+      { model: Supplier, as: 'supplier', attributes: ['name'], required: false },
+    ],
+  });
+  logger.info('商品更新成功', { productId: req.params.id, productName: product.name });
 
-    const {
-      name,
-      sku,
-      category,
-      supplier,
-      description,
-      specification,
-      unit,
-      price,
-      costPrice,
-      minStock,
-      maxStock,
-      status,
-      remark
-    } = req.body;
+  res.json({
+    message: '商品更新成功',
+    product,
+  });
+}));
 
-    // 检查SKU是否被其他商品使用
-    if (sku && sku !== product.sku) {
-      logger.info('检查SKU是否重复', { newSku: sku, oldSku: product.sku });
-      const existingProduct = await Product.findOne({ sku });
-      if (existingProduct) {
-        logger.warn('SKU已存在', { sku });
-        return res.status(400).json({ message: '商品SKU已存在' });
-      }
-    }
-
-    if (name !== undefined) product.name = name;
-    if (sku !== undefined) product.sku = sku;
-    if (category !== undefined) product.category = category;
-    if (supplier !== undefined) product.supplier = supplier;
-    if (description !== undefined) product.description = description;
-    if (specification !== undefined) product.specification = specification;
-    if (unit !== undefined) product.unit = unit;
-    if (price !== undefined) product.price = price;
-    if (costPrice !== undefined) product.costPrice = costPrice;
-    if (minStock !== undefined) product.minStock = minStock;
-    if (maxStock !== undefined) product.maxStock = maxStock;
-    if (status !== undefined) product.status = status;
-    if (remark !== undefined) product.remark = remark;
-
-    product.updatedBy = req.user._id;
-
-    logger.info('准备保存商品', { productId: req.params.id });
-    await product.save();
-    await product.populate('category supplier', 'name');
-    logger.info('商品更新成功', { productId: req.params.id, productName: product.name });
-
-    res.json({
-      message: '商品更新成功',
-      product,
-    });
-  } catch (error) {
-    logger.error('更新商品失败', {
-      productId: req.params.id,
-      userId: req.user._id,
-      requestBody: req.body,
-      error: error.message,
-      stack: error.stack
-    });
-    res.status(500).json({ message: '更新商品失败', error: error.message });
+router.delete('/:id', auth, requireRole(['admin', 'manager']), asyncHandler(async (req, res) => {
+  const product = await Product.findByPk(req.params.id);
+  if (!product) {
+    logger.warn('商品不存在', { productId: req.params.id });
+    throw new NotFoundError('商品不存在');
   }
-});
 
-// 删除商品
-router.delete('/:id', auth, requireRole(['admin', 'manager']), async (req, res) => {
-  try {
-    // 检查是否是有效的ObjectId格式
-    if (!/^[0-9a-fA-F]{24}$/.test(req.params.id)) {
-      logger.warn('无效的商品ID格式', { productId: req.params.id });
-      return res.status(404).json({ message: '商品不存在' });
-    }
-
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-      logger.warn('商品不存在', { productId: req.params.id });
-      return res.status(404).json({ message: '商品不存在' });
-    }
-
-    // 检查是否有库存
-    const inventory = await Inventory.findOne({ product: req.params.id, quantity: { $gt: 0 } });
-    if (inventory) {
-      logger.warn('商品还有库存，不能删除', { productId: req.params.id, quantity: inventory.quantity });
-      return res.status(400).json({ message: '商品还有库存，不能删除' });
-    }
-
-    await Product.findByIdAndDelete(req.params.id);
-    logger.info('商品删除成功', { productId: req.params.id, productName: product.name });
-    res.json({ message: '商品删除成功' });
-  } catch (error) {
-    logger.error('删除商品失败', {
+  const inventory = await Inventory.findOne({ 
+    where: { 
       productId: req.params.id,
-      userId: req.user._id,
-      error: error.message,
-      stack: error.stack,
-    });
-    res.status(500).json({ message: '删除商品失败', error: error.message });
+      quantity: { [Op.gt]: 0 }
+    }
+  });
+  if (inventory) {
+    logger.warn('商品还有库存，不能删除', { productId: req.params.id, quantity: inventory.quantity });
+    throw new ConflictError('商品还有库存，不能删除');
   }
-});
 
-// Excel导入 - 带错误处理的中间件
+  const transactionCount = await Transaction.count({ where: { productId: req.params.id } });
+  if (transactionCount > 0) {
+    logger.warn('商品有关联的事务记录，不能删除', { productId: req.params.id });
+    throw new ConflictError('商品有关联的事务记录，不能删除');
+  }
+
+  await product.destroy();
+  logger.info('商品删除成功', { productId: req.params.id, productName: product.name });
+  res.json({ message: '商品删除成功' });
+}));
+
 const uploadMiddleware = (req, res, next) => {
   upload.single('file')(req, res, (err) => {
     if (err) {
@@ -465,34 +404,36 @@ const uploadMiddleware = (req, res, next) => {
   });
 };
 
-router.post('/import', auth, requireRole(['admin', 'manager']), uploadMiddleware, async (req, res) => {
+router.post('/import', auth, requireRole(['admin', 'manager']), uploadMiddleware, asyncHandler(async (req, res) => {
+  let filePath = null;
+  
   try {
     logger.info('开始Excel导入', {
-      userId: req.user._id,
+      userId: req.user.id,
       mode: req.body.mode,
     });
 
     if (!req.file) {
-      return res.status(400).json({ message: '请上传Excel文件' });
+      throw new BadRequestError('请上传Excel文件');
     }
 
-    const mode = req.body.mode || 'create'; // 'create' 或 'inventory'
+    filePath = req.file.path;
+    const mode = req.body.mode || 'create';
     const warehouseId = req.body.warehouseId;
 
-    // 读取Excel文件
     const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.readFile(req.file.path);
+    await workbook.xlsx.readFile(filePath);
     const firstSheet = workbook.worksheets[0];
 
     if (!firstSheet || firstSheet.rowCount <= 1) {
-      return res.status(400).json({ message: 'Excel文件中没有数据' });
+      throw new BadRequestError('Excel文件中没有数据');
     }
 
-    // 将ExcelJS工作表转为JSON数组（第一行为表头）
     const headers = [];
     firstSheet.getRow(1).eachCell((cell, colNumber) => {
       headers[colNumber] = cell.value ? String(cell.value).trim() : '';
     });
+    
     const jsonData = [];
     for (let rowNumber = 2; rowNumber <= firstSheet.rowCount; rowNumber++) {
       const row = firstSheet.getRow(rowNumber);
@@ -512,7 +453,7 @@ router.post('/import', auth, requireRole(['admin', 'manager']), uploadMiddleware
     }
 
     if (jsonData.length === 0) {
-      return res.status(400).json({ message: 'Excel文件中没有数据' });
+      throw new BadRequestError('Excel文件中没有数据');
     }
 
     logger.info('Excel数据读取成功', { count: jsonData.length });
@@ -520,135 +461,126 @@ router.post('/import', auth, requireRole(['admin', 'manager']), uploadMiddleware
     const results = [];
     const errors = [];
 
-    for (let i = 0; i < jsonData.length; i++) {
-      const item = jsonData[i];
-      const rowNum = i + 1;
+    await sequelize.transaction(async (t) => {
+      for (let i = 0; i < jsonData.length; i++) {
+        const item = jsonData[i];
+        const rowNum = i + 1;
 
-      try {
-        if (!item['产品名称']) {
-          throw new Error('产品名称不能为空');
-        }
-        if (!item['规格']) {
-          throw new Error('规格不能为空');
-        }
-        if (!item['厂家']) {
-          throw new Error('厂家不能为空');
-        }
-        if (!item['单位']) {
-          throw new Error('单位不能为空');
-        }
-
-        // 查找或创建分类（默认使用第一个分类）
-        let category = await Category.findOne();
-        if (!category) {
-          category = new Category({
-            name: '默认分类',
-            code: 'DEFAULT',
-            description: '系统默认分类',
-          });
-          await category.save();
-        }
-
-        // 查找或创建供应商
-        let supplier = await Supplier.findOne({ name: item['厂家'] });
-        if (!supplier) {
-          supplier = new Supplier({
-            name: item['厂家'],
-            code: `SUP${Date.now() + i}`,
-            contact: '系统导入',
-            phone: '13800138000',
-            level: 'B',
-          });
-          await supplier.save();
-        }
-
-        // 生成或使用SKU
-        let sku = item['SKU'];
-        if (!sku || sku.trim() === '') {
-          const timestamp = Date.now().toString().slice(-8);
-          const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-          sku = `PROD${timestamp}${random}`;
-        }
-
-        // 检查SKU是否已存在
-        const existingProduct = await Product.findOne({ sku });
-        if (existingProduct) {
-          throw new Error(`SKU ${sku} 已存在`);
-        }
-
-        const product = new Product({
-          name: item['产品名称'],
-          sku,
-          category: category._id,
-          supplier: supplier._id,
-          specification: item['规格'],
-          modelName: item['产品型号'] || '',
-          manufacturer: item['厂家'],
-          unit: item['单位'],
-          price: parseFloat(item['售价']) || 0,
-          costPrice: parseFloat(item['成本价']) || 0,
-          minStock: parseInt(item['库存下限']) || 0,
-          maxStock: parseInt(item['库存上限']) || 99999,
-          description: item['用途'] || '',
-          remark: item['备注'] || '',
-          createdBy: req.user._id,
-          updatedBy: req.user._id,
-        });
-
-        await product.save();
-
-        // 如果是自动入库模式
-        if (mode === 'inventory' && warehouseId) {
-          const quantity = parseInt(item['入库数量']) || 1;
-
-          // 创建入库单
-          const transaction = new Transaction({
-            transactionNo: `TR${Date.now() + i}`,
-            type: 'in',
-            product: product._id,
-            warehouse: warehouseId,
-            quantity,
-            price: product.costPrice,
-            operator: req.user._id,
-            createdBy: req.user._id,
-            status: 'completed',
-          });
-
-          await transaction.save();
-
-          // 更新或创建库存记录
-          let inventory = await Inventory.findOne({
-            product: product._id,
-            warehouse: warehouseId,
-          });
-
-          if (inventory) {
-            inventory.quantity += quantity;
-            inventory.updatedBy = req.user._id;
-            inventory.lastUpdated = new Date();
-          } else {
-            inventory = new Inventory({
-              product: product._id,
-              warehouse: warehouseId,
-              quantity,
-              updatedBy: req.user._id,
-            });
+        try {
+          if (!item['产品名称']) {
+            throw new Error('产品名称不能为空');
+          }
+          if (!item['规格']) {
+            throw new Error('规格不能为空');
+          }
+          if (!item['厂家']) {
+            throw new Error('厂家不能为空');
+          }
+          if (!item['单位']) {
+            throw new Error('单位不能为空');
           }
 
-          await inventory.save();
+          let category = await Category.findOne({ transaction: t });
+          if (!category) {
+            category = await Category.create({
+              name: '默认分类',
+              code: 'DEFAULT',
+              description: '系统默认分类',
+            }, { transaction: t });
+          }
+
+          let supplier = await Supplier.findOne({ 
+            where: { name: item['厂家'] },
+            transaction: t 
+          });
+          if (!supplier) {
+            supplier = await Supplier.create({
+              name: item['厂家'],
+              code: `SUP${Date.now() + i}`,
+              contact: '系统导入',
+              phone: '13800138000',
+              level: 'B',
+            }, { transaction: t });
+          }
+
+          let sku = item['SKU'];
+          if (!sku || sku.trim() === '') {
+            const timestamp = Date.now().toString().slice(-8);
+            const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+            sku = `PROD${timestamp}${random}`;
+          }
+
+          const existingProduct = await Product.findOne({ 
+            where: { sku },
+            transaction: t 
+          });
+          if (existingProduct) {
+            throw new Error(`SKU ${sku} 已存在`);
+          }
+
+          const product = await Product.create({
+            name: item['产品名称'],
+            sku,
+            categoryId: category.id,
+            supplierId: supplier.id,
+            specification: item['规格'],
+            modelName: item['产品型号'] || '',
+            manufacturer: item['厂家'],
+            unit: item['单位'],
+            price: parseFloat(item['售价']) || 0,
+            costPrice: parseFloat(item['成本价']) || 0,
+            minStock: parseInt(item['库存下限']) || 0,
+            maxStock: parseInt(item['库存上限']) || 99999,
+            description: item['用途'] || '',
+            remark: item['备注'] || '',
+            createdBy: req.user.id,
+            updatedBy: req.user.id,
+          }, { transaction: t });
+
+          if (mode === 'inventory' && warehouseId) {
+            const quantity = parseInt(item['入库数量']) || 1;
+
+            const transaction = await Transaction.create({
+              transactionNo: `TR${Date.now() + i}`,
+              type: 'in',
+              productId: product.id,
+              warehouseId,
+              quantity,
+              price: product.costPrice,
+              operator: req.user.id,
+              createdBy: req.user.id,
+              status: 'completed',
+            }, { transaction: t });
+
+            let inventory = await Inventory.findOne({
+              where: {
+                productId: product.id,
+                warehouseId,
+              },
+              transaction: t,
+            });
+
+            if (inventory) {
+              inventory.quantity += quantity;
+              inventory.updatedBy = req.user.id;
+              inventory.lastUpdated = new Date();
+              await inventory.save({ transaction: t });
+            } else {
+              inventory = await Inventory.create({
+                productId: product.id,
+                warehouseId,
+                quantity,
+                updatedBy: req.user.id,
+              }, { transaction: t });
+            }
+          }
+
+          results.push({ row: rowNum, success: true, product: product.name });
+        } catch (error) {
+          errors.push({ row: rowNum, success: false, error: error.message });
         }
-
-        results.push({ row: rowNum, success: true, product: product.name });
-      } catch (error) {
-        errors.push({ row: rowNum, success: false, error: error.message });
       }
-    }
-
-    // 清理上传的文件
-    const fs = require('fs');
-    if (req.file && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
+    });
 
     res.json({
       message: `导入完成，成功 ${results.length} 条，失败 ${errors.length} 条`,
@@ -659,12 +591,16 @@ router.post('/import', auth, requireRole(['admin', 'manager']), uploadMiddleware
     });
   } catch (error) {
     logger.error('Excel导入失败', {
-      userId: req.user._id,
+      userId: req.user.id,
       error: error.message,
       stack: error.stack,
     });
-    res.status(500).json({ message: 'Excel导入失败', error: error.message });
+    throw error;
+  } finally {
+    if (filePath && fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
   }
-});
+}));
 
 module.exports = router;

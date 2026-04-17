@@ -1,113 +1,102 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+const { User, Sequelize } = require('../models');
 const { auth } = require('../middleware/auth');
+const { asyncHandler } = require('../middleware/errorHandler');
+const { BadRequestError, ForbiddenError } = require('../errors/AppError');
 const logger = require('../utils/logger');
 
 const router = express.Router();
+const { Op } = Sequelize;
 
-// 登录
-router.post('/login', async (req, res) => {
-  try {
-    const { username, password } = req.body;
+router.post('/login', asyncHandler(async (req, res) => {
+  const { username, password } = req.body;
 
-    if (!username || !password) {
-      return res.status(400).json({ message: '用户名和密码不能为空' });
-    }
-
-    const user = await User.findOne({ username });
-    if (!user) {
-      return res.status(400).json({ message: '用户名或密码错误' });
-    }
-
-    if (!user.status) {
-      return res.status(400).json({ message: '账号已被禁用' });
-    }
-
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      return res.status(400).json({ message: '用户名或密码错误' });
-    }
-
-    // 更新最后登录时间
-    user.lastLogin = new Date();
-    await user.save();
-
-    // 生成token
-    const token = jwt.sign(
-      { userId: user._id, username: user.username, role: user.role },
-      process.env.JWT_SECRET || 'warehouse-management-system-jwt-secret-key-2024',
-      { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
-    );
-
-    res.json({
-      message: '登录成功',
-      token,
-      user: {
-        id: user._id,
-        username: user.username,
-        realName: user.realName,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        avatar: user.avatar,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ message: '登录失败', error: error.message });
+  if (!username || !password) {
+    throw new BadRequestError('用户名和密码不能为空');
   }
-});
 
-// 注册（仅管理员可调用）
-router.post('/register', auth, async (req, res) => {
-  try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ message: '权限不足' });
-    }
-
-    const { username, password, realName, email, phone, role } = req.body;
-
-    // 检查用户是否已存在
-    const existingUser = await User.findOne({ 
-      $or: [{ username }, { email }]
-    });
-    
-    if (existingUser) {
-      return res.status(400).json({ message: '用户名或邮箱已存在' });
-    }
-
-    const user = new User({
-      username,
-      password,
-      realName,
-      email,
-      phone,
-      role: role || 'staff',
-    });
-
-    await user.save();
-
-    res.status(201).json({
-      message: '注册成功',
-      user: {
-        id: user._id,
-        username: user.username,
-        realName: user.realName,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ message: '注册失败', error: error.message });
+  const user = await User.findOne({ where: { username } });
+  if (!user) {
+    throw new BadRequestError('用户名或密码错误');
   }
-});
 
-// 获取当前用户信息
-router.get('/profile', auth, async (req, res) => {
+  if (!user.status) {
+    throw new BadRequestError('账号已被禁用');
+  }
+
+  const isMatch = await user.comparePassword(password);
+  if (!isMatch) {
+    throw new BadRequestError('用户名或密码错误');
+  }
+
+  user.lastLogin = new Date();
+  await user.save();
+
+  const token = jwt.sign(
+    { userId: user.id, username: user.username, role: user.role },
+    process.env.JWT_SECRET || 'warehouse-management-system-jwt-secret-key-2024',
+    { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
+  );
+
+  res.json({
+    message: '登录成功',
+    token,
+    user: {
+      id: user.id,
+      username: user.username,
+      realName: user.realName,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+      avatar: user.avatar,
+    },
+  });
+}));
+
+router.post('/register', auth, asyncHandler(async (req, res) => {
+  if (req.user.role !== 'admin') {
+    throw new ForbiddenError('权限不足');
+  }
+
+  const { username, password, realName, email, phone, role } = req.body;
+
+  const existingUser = await User.findOne({ 
+    where: {
+      [Op.or]: [{ username }, { email }]
+    }
+  });
+  
+  if (existingUser) {
+    throw new BadRequestError('用户名或邮箱已存在');
+  }
+
+  const user = await User.create({
+    username,
+    password,
+    realName,
+    email,
+    phone,
+    role: role || 'staff',
+  });
+
+  res.status(201).json({
+    message: '注册成功',
+    user: {
+      id: user.id,
+      username: user.username,
+      realName: user.realName,
+      email: user.email,
+      phone: user.phone,
+      role: user.role,
+    },
+  });
+}));
+
+router.get('/profile', auth, asyncHandler(async (req, res) => {
   res.json({
     user: {
-      id: req.user._id,
+      id: req.user.id,
       username: req.user.username,
       realName: req.user.realName,
       email: req.user.email,
@@ -116,38 +105,34 @@ router.get('/profile', auth, async (req, res) => {
       avatar: req.user.avatar,
     },
   });
-});
+}));
 
-// 修改密码
-router.put('/change-password', auth, async (req, res) => {
-  try {
-    const { oldPassword, newPassword } = req.body;
+router.put('/change-password', auth, asyncHandler(async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
 
-    if (!oldPassword || !newPassword) {
-      return res.status(400).json({ message: '旧密码和新密码不能为空' });
-    }
-
-    if (newPassword.length < 6) {
-      return res.status(400).json({ message: '新密码长度不能少于6位' });
-    }
-
-    const isMatch = await req.user.comparePassword(oldPassword);
-    if (!isMatch) {
-      return res.status(400).json({ message: '旧密码错误' });
-    }
-
-    req.user.password = newPassword;
-    await req.user.save();
-
-    res.json({ message: '密码修改成功' });
-  } catch (error) {
-    res.status(500).json({ message: '密码修改失败', error: error.message });
+  if (!oldPassword || !newPassword) {
+    throw new BadRequestError('旧密码和新密码不能为空');
   }
-});
 
-// 退出登录
-router.post('/logout', auth, async (req, res) => {
+  if (newPassword.length < 6) {
+    throw new BadRequestError('新密码长度不能少于6位');
+  }
+
+  const user = await User.findByPk(req.user.id);
+  
+  const isMatch = await user.comparePassword(oldPassword);
+  if (!isMatch) {
+    throw new BadRequestError('旧密码错误');
+  }
+
+  user.password = newPassword;
+  await user.save();
+
+  res.json({ message: '密码修改成功' });
+}));
+
+router.post('/logout', auth, asyncHandler(async (req, res) => {
   res.json({ message: '退出登录成功' });
-});
+}));
 
 module.exports = router;
