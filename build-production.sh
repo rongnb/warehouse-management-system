@@ -167,7 +167,7 @@ echo ""
 echo "💡 推荐使用Nginx托管前端静态文件并反向代理后端API"
 echo "按 Ctrl+C 停止服务"
 
-trap "kill $BACKEND_PID; exit 0" INT
+trap "echo '🛑 正在停止服务...'; kill -TERM $BACKEND_PID 2>/dev/null; wait $BACKEND_PID 2>/dev/null; exit 0" INT TERM
 wait
 SCRIPT
 chmod +x "$DIST_DIR/start-production.sh"
