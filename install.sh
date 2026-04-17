@@ -106,7 +106,7 @@ cd backend
 # 等待 MongoDB 就绪
 sleep 2
 
-# 运行数据库初始化（使用database目录下的初始化脚本，支持跨目录路径解析）
+# 运行数据库初始化
 node ../database/init.js
 
 cd ..

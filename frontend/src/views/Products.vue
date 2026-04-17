@@ -563,7 +563,7 @@ const handleImportSuccess = () => {
 };
 
 // 下载模板
-const handleDownloadTemplate = () => {
+const handleDownloadTemplate = async () => {
   try {
     // 创建模板数据
     const templateData = [
