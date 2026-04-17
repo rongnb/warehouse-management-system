@@ -1,6 +1,7 @@
 const express = require('express');
 const Tesseract = require('tesseract.js');
 const { auth } = require('../middleware/auth');
+const { asyncHandler } = require('../middleware/errorHandler');
 const logger = require('../utils/logger');
 const multer = require('multer');
 const path = require('path');
@@ -219,19 +220,19 @@ function parseOCRResult(ocrText) {
 }
 
 // OCR识别接口
-router.post('/recognize', auth, upload.single('image'), async (req, res) => {
+router.post('/recognize', auth, upload.single('image'), asyncHandler(async (req, res) => {
   const totalStartTime = Date.now();
   logger.info('🚀 开始OCR识别请求');
 
+  if (!req.file) {
+    logger.warn('❌ 没有上传图片');
+    return res.status(400).json({ message: '请上传图片' });
+  }
+
+  const imagePath = req.file.path;
+  logger.info(`📷 图片已保存: ${imagePath}`);
+
   try {
-    if (!req.file) {
-      logger.warn('❌ 没有上传图片');
-      return res.status(400).json({ message: '请上传图片' });
-    }
-
-    const imagePath = req.file.path;
-    logger.info(`📷 图片已保存: ${imagePath}`);
-
     // 初始化worker
     const worker = await initializeWorker();
 
@@ -245,12 +246,6 @@ router.post('/recognize', auth, upload.single('image'), async (req, res) => {
     // 解析结果
     const parsedResult = parseOCRResult(result.data.text);
 
-    // 清理临时文件
-    if (fs.existsSync(imagePath)) {
-      fs.unlinkSync(imagePath);
-      logger.debug(`🧹 临时文件已删除: ${imagePath}`);
-    }
-
     const totalDuration = Date.now() - totalStartTime;
     logger.info(`🏁 整个OCR流程完成，总耗时: ${totalDuration}ms`);
 
@@ -263,26 +258,27 @@ router.post('/recognize', auth, upload.single('image'), async (req, res) => {
     const totalDuration = Date.now() - totalStartTime;
     logger.error(`❌ OCR识别失败，耗时 ${totalDuration}ms:`, error);
 
-    // 清理临时文件
-    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
-      fs.unlinkSync(req.file.path);
-    }
-
     res.status(500).json({
       success: false,
       message: 'OCR识别失败',
       error: error.message,
     });
+  } finally {
+    // 清理临时文件
+    if (fs.existsSync(imagePath)) {
+      fs.unlinkSync(imagePath);
+      logger.debug(`🧹 临时文件已删除: ${imagePath}`);
+    }
   }
-});
+}));
 
 // 获取OCR服务状态
-router.get('/status', auth, async (req, res) => {
+router.get('/status', auth, asyncHandler(async (req, res) => {
   res.json({
     success: true,
     initialized: workerInitialized,
     workerAvailable: workerInstance !== null,
   });
-});
+}));
 
 module.exports = router;
