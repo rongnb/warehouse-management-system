@@ -22,8 +22,5 @@
     "camera"
   ],
   "author": "rongnb",
-  "license": "ISC",
-  "dependencies": {
-    "xlsx": "^0.18.5"
-  }
+  "license": "ISC"
 }
