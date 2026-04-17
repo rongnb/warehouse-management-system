@@ -383,6 +383,8 @@ const lowStockReport = {
       const rows = await Inventory.findAll({
         where: {
           ...where,
+          // 静态字符串，不含任何用户输入，安全。Sequelize 不支持跨表字段比较运算符，
+          // 因此 lowStock 条件必须用 literal 表达：列出当前库存少于商品最小阈值且阈值非零的行。
           [Op.and]: literal('Inventory.quantity <= product.minStock AND product.minStock > 0'),
         },
         include: [

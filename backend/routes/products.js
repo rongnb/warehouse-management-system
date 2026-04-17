@@ -417,10 +417,9 @@ router.post('/import', auth, requireRole(['admin', 'manager']), uploadMiddleware
       throw new BadRequestError('请上传Excel文件');
     }
 
-    filePath = req.file.path;
-    // 防御 path-injection：确认 filePath 仍在 uploads 目录内
+    // 防御 path-injection：将 req.file.path 锚定到 uploads 目录后再使用
     const uploadsRoot = path.resolve(__dirname, '../uploads');
-    const resolved = path.resolve(filePath);
+    const resolved = path.resolve(req.file.path);
     if (!resolved.startsWith(uploadsRoot + path.sep)) {
       throw new BadRequestError('非法的上传文件路径');
     }
@@ -604,8 +603,12 @@ router.post('/import', auth, requireRole(['admin', 'manager']), uploadMiddleware
     });
     throw error;
   } finally {
-    if (filePath && fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
+    if (filePath) {
+      const safeRoot = path.resolve(__dirname, '../uploads');
+      const safe = path.resolve(filePath);
+      if (safe.startsWith(safeRoot + path.sep) && fs.existsSync(safe)) {
+        fs.unlinkSync(safe);
+      }
     }
   }
 }));
