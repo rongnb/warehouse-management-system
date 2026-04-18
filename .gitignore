@@ -36,19 +36,34 @@ build/
 # Database
 *.db
 *.sqlite
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
 
 # Offline packages
 packages/
 
 # Uploads
 uploads/
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# Test coverage
+coverage/
 
 # Claude
 .claude/
 
 # MongoDB data
-data/
 mongodb/
+
+# SQLite data
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+!data/.gitkeep
 
 # Test files
 test-*.js
@@ -62,3 +77,4 @@ temp-*.js
 # Windows
 desktop.ini
 
+packages/

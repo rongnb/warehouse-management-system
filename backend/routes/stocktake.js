@@ -1,165 +1,171 @@
 const express = require('express');
 const router = express.Router();
 const { auth, requireRole } = require('../middleware/auth');
-const Stocktake = require('../models/Stocktake');
-const Inventory = require('../models/Inventory');
-const Product = require('../models/Product');
-const Warehouse = require('../models/Warehouse');
-const Transaction = require('../models/Transaction');
-const mongoose = require('mongoose');
+const { Stocktake, StocktakeItem, Inventory, Product, Warehouse, Transaction, User, sequelize, Sequelize } = require('../models');
+const { asyncHandler } = require('../middleware/errorHandler');
+const { BadRequestError, NotFoundError } = require('../errors/AppError');
 const logger = require('../utils/logger');
 
+const { Op } = Sequelize;
+
 // 获取盘库列表
-router.get('/', auth, async (req, res) => {
-  try {
-    const { page = 1, limit = 10, status, warehouse, keyword, startDate, endDate } = req.query;
-    const query = {};
+router.get('/', auth, asyncHandler(async (req, res) => {
+  const { page = 1, limit = 10, status, warehouse, keyword, startDate, endDate } = req.query;
+  const where = {};
 
-    if (status) query.status = status;
-    if (warehouse) query.warehouse = warehouse;
-    if (keyword) {
-      query.$or = [
-        { stocktakeNo: { $regex: keyword, $options: 'i' } },
-        { title: { $regex: keyword, $options: 'i' } },
-      ];
-    }
-    if (startDate && endDate) {
-      query.createdAt = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate),
-      };
-    }
-
-    const stocktakes = await Stocktake.find(query)
-      .populate('warehouse', 'name')
-      .populate('createdBy', 'realName username')
-      .populate('firstConfirmedBy', 'realName username')
-      .populate('secondConfirmedBy', 'realName username')
-      .sort({ createdAt: -1 })
-      .limit(limit * 1)
-      .skip((page - 1) * limit);
-
-    const total = await Stocktake.countDocuments(query);
-
-    res.json({
-      stocktakes,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit),
-      },
-    });
-  } catch (error) {
-    res.status(500).json({ message: '获取盘库列表失败', error: error.message });
+  if (status) where.status = status;
+  if (warehouse) where.warehouseId = warehouse;
+  if (keyword) {
+    where[Op.or] = [
+      { stocktakeNo: { [Op.like]: `%${keyword}%` } },
+      { title: { [Op.like]: `%${keyword}%` } },
+    ];
   }
-});
+  if (startDate && endDate) {
+    where.createdAt = {
+      [Op.gte]: new Date(startDate),
+      [Op.lte]: new Date(endDate),
+    };
+  }
+
+  const offset = (page - 1) * limit;
+  const { count: total, rows: stocktakes } = await Stocktake.findAndCountAll({
+    where,
+    include: [
+      { model: Warehouse, as: 'warehouse', attributes: ['id', 'name'], required: false },
+      { model: User, as: 'creator', attributes: ['realName', 'username'], required: false },
+      { model: User, as: 'firstConfirmer', attributes: ['realName', 'username'], required: false },
+      { model: User, as: 'secondConfirmer', attributes: ['realName', 'username'], required: false },
+    ],
+    order: [['createdAt', 'DESC']],
+    limit: parseInt(limit),
+    offset,
+  });
+
+  res.json({
+    stocktakes,
+    pagination: {
+      page: parseInt(page),
+      limit: parseInt(limit),
+      total,
+      pages: Math.ceil(total / limit),
+    },
+  });
+}));
 
 // 获取盘库详情
-router.get('/:id', auth, async (req, res) => {
-  try {
-    const stocktake = await Stocktake.findById(req.params.id)
-      .populate('warehouse', 'name address')
-      .populate('createdBy', 'realName username')
-      .populate('firstConfirmedBy', 'realName username')
-      .populate('secondConfirmedBy', 'realName username')
-      .populate('items.product', 'name sku spec unit price');
-
-    if (!stocktake) {
-      return res.status(404).json({ message: '盘库记录不存在' });
-    }
-
-    res.json({ stocktake });
-  } catch (error) {
-    res.status(500).json({ message: '获取盘库详情失败', error: error.message });
-  }
-});
-
-// 创建盘库单：管理员、经理、仓管员都可以发起
-router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), async (req, res) => {
-  try {
-    const { title, warehouse, remark } = req.body;
-
-    if (!title || !warehouse) {
-      return res.status(400).json({ message: '标题和仓库不能为空' });
-    }
-
-    const warehouseExists = await Warehouse.findById(warehouse);
-    if (!warehouseExists) {
-      return res.status(400).json({ message: '仓库不存在' });
-    }
-
-    // 显式生成stocktakeNo
-    const date = new Date();
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-
-    const count = await Stocktake.countDocuments({
-      createdAt: {
-        $gte: new Date(year, month - 1, day),
-        $lt: new Date(year, month - 1, day + 1),
+router.get('/:id', auth, asyncHandler(async (req, res) => {
+  const stocktake = await Stocktake.findByPk(req.params.id, {
+    include: [
+      { model: Warehouse, as: 'warehouse', attributes: ['name', 'address'], required: false },
+      { model: User, as: 'creator', attributes: ['realName', 'username'], required: false },
+      { model: User, as: 'firstConfirmer', attributes: ['realName', 'username'], required: false },
+      { model: User, as: 'secondConfirmer', attributes: ['realName', 'username'], required: false },
+      {
+        model: StocktakeItem,
+        as: 'items',
+        include: [
+          { model: Product, as: 'product', attributes: ['name', 'sku', 'spec', 'unit', 'price'], required: false },
+        ],
       },
+    ],
+  });
+
+  if (!stocktake) {
+    throw new NotFoundError('盘库记录不存在');
+  }
+
+  res.json({ stocktake });
+}));
+
+// 创建盘库单
+router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), asyncHandler(async (req, res) => {
+  const { title, warehouse, remark } = req.body;
+
+  if (!title || !warehouse) {
+    throw new BadRequestError('标题和仓库不能为空');
+  }
+
+  const warehouseExists = await Warehouse.findByPk(warehouse);
+  if (!warehouseExists) {
+    throw new BadRequestError('仓库不存在');
+  }
+
+  await sequelize.transaction(async (t) => {
+    // Get all inventory for this warehouse
+    const inventories = await Inventory.findAll({
+      where: { warehouseId: warehouse },
+      include: [
+        { model: Product, as: 'product', attributes: ['name', 'sku', 'spec', 'unit', 'price'], required: false },
+      ],
+      transaction: t,
     });
 
-    const stocktakeNo = `PD${year}${month}${day}${String(count + 1).padStart(4, '0')}`;
+    // Create stocktake record (stocktakeNo auto-generated by hook)
+    const stocktake = await Stocktake.create({
+      title,
+      warehouseId: warehouse,
+      warehouseName: warehouseExists.name,
+      startTime: new Date(),
+      createdBy: req.user.id,
+      remark,
+      status: 'draft',
+    }, { transaction: t });
 
-    // 获取该仓库所有库存
-    const inventories = await Inventory.find({ warehouse })
-      .populate('product', 'name sku spec unit price');
-
+    // Create items
     const items = inventories.map(inv => {
       const systemQuantity = inv.quantity;
       return {
-        product: inv.product._id,
-        sku: inv.product.sku,
-        productName: inv.product.name,
-        spec: inv.product.spec,
-        unit: inv.product.unit,
+        stocktakeId: stocktake.id,
+        productId: inv.productId,
+        sku: inv.product?.sku || '',
+        productName: inv.product?.name || '',
+        spec: inv.product?.spec || '',
+        unit: inv.product?.unit || '',
         systemQuantity,
         actualQuantity: 0,
         difference: -systemQuantity,
         differenceType: 'loss',
-        unitPrice: inv.product.price || 0,
-        totalAmount: -systemQuantity * (inv.product.price || 0),
+        unitPrice: inv.product?.price || 0,
+        totalAmount: -systemQuantity * (inv.product?.price || 0),
       };
     });
 
-    const stocktake = new Stocktake({
-      stocktakeNo,
-      title,
-      warehouse,
-      warehouseName: warehouseExists.name,
-      startTime: new Date(),
-      items,
-      createdBy: req.user._id,
-      remark,
+    if (items.length > 0) {
+      await StocktakeItem.bulkCreate(items, { transaction: t });
+    }
+
+    await stocktake.reload({
+      include: [{ model: StocktakeItem, as: 'items' }],
+      transaction: t,
     });
 
-    await stocktake.save();
-
     res.json({ stocktake, message: '盘库单创建成功' });
-  } catch (error) {
-    res.status(500).json({ message: '创建盘库单失败', error: error.message });
-  }
-});
+  });
+}));
 
 // 更新盘库单（录入实际库存）
-router.put('/:id', auth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { items, remark } = req.body;
+router.put('/:id', auth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { items, remark } = req.body;
 
-    const stocktake = await Stocktake.findById(id);
-    if (!stocktake) {
-      return res.status(404).json({ message: '盘库记录不存在' });
-    }
+  const stocktake = await Stocktake.findByPk(id);
+  if (!stocktake) {
+    throw new NotFoundError('盘库记录不存在');
+  }
 
-    if (stocktake.status !== 'draft') {
-      return res.status(400).json({ message: '只能编辑草稿状态的盘库单' });
-    }
+  if (stocktake.status !== 'draft') {
+    throw new BadRequestError('只能编辑草稿状态的盘库单');
+  }
 
-    // 计算盘盈盘亏
+  await sequelize.transaction(async (t) => {
+    // Delete existing items
+    await StocktakeItem.destroy({
+      where: { stocktakeId: id },
+      transaction: t,
+    });
+
+    // Calculate totals
     let totalProfitQuantity = 0;
     let totalProfitAmount = 0;
     let totalLossQuantity = 0;
@@ -181,219 +187,228 @@ router.put('/:id', auth, async (req, res) => {
 
       return {
         ...item,
+        stocktakeId: id,
         difference,
         differenceType,
         totalAmount: difference * item.unitPrice,
       };
     });
 
-    stocktake.items = updatedItems;
+    // Insert new items
+    if (updatedItems.length > 0) {
+      await StocktakeItem.bulkCreate(updatedItems, { transaction: t });
+    }
+
+    // Update stocktake totals
     stocktake.totalProfitQuantity = totalProfitQuantity;
     stocktake.totalProfitAmount = totalProfitAmount;
     stocktake.totalLossQuantity = totalLossQuantity;
     stocktake.totalLossAmount = totalLossAmount;
-    stocktake.remark = remark || stocktake.remark;
+    if (remark !== undefined) stocktake.remark = remark;
 
-    await stocktake.save();
+    await stocktake.save({ transaction: t });
+
+    await stocktake.reload({
+      include: [{ model: StocktakeItem, as: 'items' }],
+      transaction: t,
+    });
 
     res.json({ stocktake, message: '盘库单更新成功' });
-  } catch (error) {
-    res.status(500).json({ message: '更新盘库单失败', error: error.message });
-  }
-});
+  });
+}));
 
 // 提交盘库单（进入核实流程）
-router.post('/:id/submit', auth, async (req, res) => {
-  try {
-    const { id } = req.params;
+router.post('/:id/submit', auth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
 
-    const stocktake = await Stocktake.findById(id);
-    if (!stocktake) {
-      return res.status(404).json({ message: '盘库记录不存在' });
-    }
-
-    if (stocktake.status !== 'draft') {
-      return res.status(400).json({ message: '只能提交草稿状态的盘库单' });
-    }
-
-    stocktake.status = 'confirming';
-    await stocktake.save();
-
-    res.json({ message: '盘库单已提交，等待核实' });
-  } catch (error) {
-    res.status(500).json({ message: '提交盘库单失败', error: error.message });
+  const stocktake = await Stocktake.findByPk(id);
+  if (!stocktake) {
+    throw new NotFoundError('盘库记录不存在');
   }
-});
 
-// 核实盘库单 - 双人核实，发起人可以作为第一核实人
-router.post('/:id/confirm', auth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { remark } = req.body;
+  if (stocktake.status !== 'draft') {
+    throw new BadRequestError('只能提交草稿状态的盘库单');
+  }
 
-    const stocktake = await Stocktake.findById(id);
-    if (!stocktake) {
-      return res.status(404).json({ message: '盘库记录不存在' });
+  stocktake.status = 'confirming';
+  await stocktake.save();
+
+  res.json({ message: '盘库单已提交，等待核实' });
+}));
+
+// 核实盘库单 - 双人核实
+router.post('/:id/confirm', auth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { remark } = req.body;
+
+  const stocktake = await Stocktake.findByPk(id, {
+    include: [{ model: StocktakeItem, as: 'items' }],
+  });
+
+  if (!stocktake) {
+    throw new NotFoundError('盘库记录不存在');
+  }
+
+  if (stocktake.status !== 'confirming') {
+    throw new BadRequestError('盘库单不在核实状态');
+  }
+
+  // First confirmer
+  if (!stocktake.firstConfirmedBy) {
+    stocktake.firstConfirmedBy = req.user.id;
+    stocktake.firstConfirmedAt = new Date();
+    stocktake.firstConfirmedRemark = remark || '';
+    await stocktake.save();
+    return res.json({ message: '第一核实人确认成功，等待第二核实人确认' });
+  }
+
+  // Second confirmer
+  if (!stocktake.secondConfirmedBy) {
+    if (stocktake.firstConfirmedBy === req.user.id) {
+      throw new BadRequestError('第二核实人不能与第一核实人相同');
     }
 
-    if (stocktake.status !== 'confirming') {
-      return res.status(400).json({ message: '盘库单不在核实状态' });
-    }
-
-    // 双人核实逻辑
-    if (!stocktake.firstConfirmedBy) {
-      // 第一核实人（发起人也可以）
-      stocktake.firstConfirmedBy = req.user._id;
-      stocktake.firstConfirmedAt = new Date();
-      stocktake.firstConfirmedRemark = remark || '';
-      await stocktake.save();
-      res.json({ message: '第一核实人确认成功，等待第二核实人确认' });
-    } else if (!stocktake.secondConfirmedBy) {
-      // 第二核实人：不能是第一核实人
-      if (stocktake.firstConfirmedBy.toString() === req.user._id.toString()) {
-        return res.status(400).json({ message: '第二核实人不能与第一核实人相同' });
-      }
-
-      stocktake.secondConfirmedBy = req.user._id;
+    await sequelize.transaction(async (t) => {
+      stocktake.secondConfirmedBy = req.user.id;
       stocktake.secondConfirmedAt = new Date();
       stocktake.secondConfirmedRemark = remark || '';
       stocktake.status = 'completed';
-      stocktake.completedBy = req.user._id;
+      stocktake.completedBy = req.user.id;
       stocktake.completedAt = new Date();
       stocktake.endTime = new Date();
 
-      // 更新库存并生成出入库记录
-      try {
-        for (const item of stocktake.items) {
-          if (item.difference !== 0) {
-            // 更新库存
-            await Inventory.findOneAndUpdate(
-              { product: item.product, warehouse: stocktake.warehouse },
-              {
-                $inc: { quantity: item.difference },
-                lastUpdated: new Date(),
-                updatedBy: req.user._id
-              }
-            );
+      // Update inventory and create transactions for differences
+      for (const item of stocktake.items) {
+        if (item.difference !== 0) {
+          // Update inventory
+          await Inventory.increment(
+            { quantity: item.difference },
+            {
+              where: { productId: item.productId, warehouseId: stocktake.warehouseId },
+              transaction: t,
+            }
+          );
 
-            // 生成交易记录
-            const transactionType = item.difference > 0 ? 'stocktake_profit' : 'stocktake_loss';
-            const transaction = new Transaction({
-              transactionNo: `TR${Date.now()}`,
-              type: transactionType,
-              product: item.product,
-              warehouse: stocktake.warehouse,
-              quantity: Math.abs(item.difference),
-              price: item.unitPrice,
-              unitPrice: item.unitPrice,
-              referenceNo: stocktake.stocktakeNo,
-              remark: `盘库${item.differenceType === 'profit' ? '盘盈' : '盘亏'}：${item.productName}`,
-              operator: req.user._id,
-              createdBy: req.user._id,
-              status: 'completed',
-            });
-            await transaction.save();
-          }
+          await Inventory.update(
+            { lastUpdated: new Date(), updatedBy: req.user.id },
+            {
+              where: { productId: item.productId, warehouseId: stocktake.warehouseId },
+              transaction: t,
+            }
+          );
+
+          // Create transaction record
+          const transactionType = item.difference > 0 ? 'stocktake_profit' : 'stocktake_loss';
+          await Transaction.create({
+            type: transactionType,
+            productId: item.productId,
+            warehouseId: stocktake.warehouseId,
+            quantity: Math.abs(item.difference),
+            price: item.unitPrice,
+            unitPrice: item.unitPrice,
+            referenceNo: stocktake.stocktakeNo,
+            remark: `盘库${item.differenceType === 'profit' ? '盘盈' : '盘亏'}：${item.productName}`,
+            operator: req.user.id,
+            createdBy: req.user.id,
+            status: 'completed',
+          }, { transaction: t });
         }
-
-        await stocktake.save();
-        res.json({ message: '第二核实人确认成功，盘库完成，库存已更新' });
-      } catch (error) {
-        throw error;
       }
-    } else {
-      return res.status(400).json({ message: '盘库单已完成核实' });
-    }
-  } catch (error) {
-    res.status(500).json({ message: '核实盘库单失败', error: error.message });
+
+      await stocktake.save({ transaction: t });
+    });
+
+    return res.json({ message: '第二核实人确认成功，盘库完成，库存已更新' });
   }
-});
+
+  throw new BadRequestError('盘库单已完成核实');
+}));
 
 // 取消盘库单
-router.post('/:id/cancel', auth, async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { reason } = req.body;
+router.post('/:id/cancel', auth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const { reason } = req.body;
 
-    if (!reason) {
-      return res.status(400).json({ message: '取消原因不能为空' });
-    }
-
-    const stocktake = await Stocktake.findById(id);
-    if (!stocktake) {
-      return res.status(404).json({ message: '盘库记录不存在' });
-    }
-
-    if (stocktake.status === 'completed') {
-      return res.status(400).json({ message: '已完成的盘库单不能取消' });
-    }
-
-    stocktake.status = 'cancelled';
-    stocktake.cancelledBy = req.user._id;
-    stocktake.cancelledAt = new Date();
-    stocktake.cancelReason = reason;
-
-    await stocktake.save();
-
-    res.json({ message: '盘库单已取消' });
-  } catch (error) {
-    res.status(500).json({ message: '取消盘库单失败', error: error.message });
+  if (!reason) {
+    throw new BadRequestError('取消原因不能为空');
   }
-});
+
+  const stocktake = await Stocktake.findByPk(id);
+  if (!stocktake) {
+    throw new NotFoundError('盘库记录不存在');
+  }
+
+  if (stocktake.status === 'completed') {
+    throw new BadRequestError('已完成的盘库单不能取消');
+  }
+
+  stocktake.status = 'cancelled';
+  stocktake.cancelledBy = req.user.id;
+  stocktake.cancelledAt = new Date();
+  stocktake.cancelReason = reason;
+
+  await stocktake.save();
+
+  res.json({ message: '盘库单已取消' });
+}));
 
 // 导出盘库报表
-router.get('/:id/export', auth, async (req, res) => {
-  try {
-    const { id } = req.params;
+router.get('/:id/export', auth, asyncHandler(async (req, res) => {
+  const { id } = req.params;
 
-    const stocktake = await Stocktake.findById(id)
-      .populate('warehouse', 'name address')
-      .populate('createdBy', 'realName username')
-      .populate('firstConfirmedBy', 'realName username')
-      .populate('secondConfirmedBy', 'realName username');
+  const stocktake = await Stocktake.findByPk(id, {
+    include: [
+      { model: Warehouse, as: 'warehouse', attributes: ['name', 'address'], required: false },
+      { model: User, as: 'creator', attributes: ['realName', 'username'], required: false },
+      { model: User, as: 'firstConfirmer', attributes: ['realName', 'username'], required: false },
+      { model: User, as: 'secondConfirmer', attributes: ['realName', 'username'], required: false },
+      {
+        model: StocktakeItem,
+        as: 'items',
+      },
+    ],
+  });
 
-    if (!stocktake) {
-      return res.status(404).json({ message: '盘库记录不存在' });
-    }
-
-    // 构造导出数据
-    const exportData = {
-      stocktakeNo: stocktake.stocktakeNo,
-      title: stocktake.title,
-      warehouseName: stocktake.warehouseName,
-      status: stocktake.status,
-      startTime: stocktake.startTime,
-      endTime: stocktake.endTime,
-      totalProfitQuantity: stocktake.totalProfitQuantity,
-      totalProfitAmount: stocktake.totalProfitAmount,
-      totalLossQuantity: stocktake.totalLossQuantity,
-      totalLossAmount: stocktake.totalLossAmount,
-      firstConfirmedBy: stocktake.firstConfirmedBy?.realName,
-      firstConfirmedAt: stocktake.firstConfirmedAt,
-      secondConfirmedBy: stocktake.secondConfirmedBy?.realName,
-      secondConfirmedAt: stocktake.secondConfirmedAt,
-      createdBy: stocktake.createdBy?.realName,
-      createdAt: stocktake.createdAt,
-      remark: stocktake.remark,
-      items: stocktake.items.map(item => ({
-        sku: item.sku,
-        productName: item.productName,
-        spec: item.spec,
-        unit: item.unit,
-        systemQuantity: item.systemQuantity,
-        actualQuantity: item.actualQuantity,
-        difference: item.difference,
-        differenceType: item.differenceType === 'profit' ? '盘盈' : item.differenceType === 'loss' ? '盘亏' : '无差异',
-        unitPrice: item.unitPrice,
-        totalAmount: item.totalAmount,
-        remark: item.remark,
-      })),
-    };
-
-    res.json({ data: exportData, message: '导出成功' });
-  } catch (error) {
-    res.status(500).json({ message: '导出盘库报表失败', error: error.message });
+  if (!stocktake) {
+    throw new NotFoundError('盘库记录不存在');
   }
-});
+
+  // Format export data
+  const stObj = stocktake.toJSON();
+  const exportData = {
+    stocktakeNo: stObj.stocktakeNo,
+    title: stObj.title,
+    warehouseName: stObj.warehouseName,
+    status: stObj.status,
+    startTime: stObj.startTime,
+    endTime: stObj.endTime,
+    totalProfitQuantity: stObj.totalProfitQuantity,
+    totalProfitAmount: stObj.totalProfitAmount,
+    totalLossQuantity: stObj.totalLossQuantity,
+    totalLossAmount: stObj.totalLossAmount,
+    firstConfirmedBy: stObj.firstConfirmer?.realName,
+    firstConfirmedAt: stObj.firstConfirmedAt,
+    secondConfirmedBy: stObj.secondConfirmer?.realName,
+    secondConfirmedAt: stObj.secondConfirmedAt,
+    createdBy: stObj.creator?.realName,
+    createdAt: stObj.createdAt,
+    remark: stObj.remark,
+    items: stObj.items?.map(item => ({
+      sku: item.sku,
+      productName: item.productName,
+      spec: item.spec,
+      unit: item.unit,
+      systemQuantity: item.systemQuantity,
+      actualQuantity: item.actualQuantity,
+      difference: item.difference,
+      differenceType: item.differenceType === 'profit' ? '盘盈' : item.differenceType === 'loss' ? '盘亏' : '无差异',
+      unitPrice: item.unitPrice,
+      totalAmount: item.totalAmount,
+      remark: item.remark,
+    })) || [],
+  };
+
+  res.json({ data: exportData, message: '导出成功' });
+}));
 
 module.exports = router;

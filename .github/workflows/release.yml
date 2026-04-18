@@ -1,0 +1,84 @@
+name: Release Offline Package
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            suffix: linux
+            ext: tar.gz
+          - os: windows-latest
+            suffix: win
+            ext: zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install backend prod deps (with sqlite3 prebuilt for ${{ matrix.suffix }})
+        run: npm install --omit=dev --no-audit --no-fund --prefix backend
+
+      - name: Install + build frontend
+        run: |
+          npm ci --prefix frontend
+          npm run build --prefix frontend
+        shell: bash
+
+      - name: Assemble release folder
+        shell: bash
+        run: |
+          mkdir -p out/wms
+          cp -r backend out/wms/backend
+          rm -rf out/wms/backend/uploads/* out/wms/backend/data out/wms/backend/.env out/wms/backend/*.db
+          mkdir -p out/wms/frontend/dist
+          cp -r frontend/dist/* out/wms/frontend/dist/
+          mkdir -p out/wms/data
+          touch out/wms/data/.gitkeep
+          cp README.md QUICKSTART.md DEPLOY_INSTRUCTION.md out/wms/ 2>/dev/null || true
+          cp install.sh install.bat install-offline.sh install-offline.bat start.sh start.bat out/wms/ 2>/dev/null || true
+
+      - name: Pack tar.gz (linux)
+        if: matrix.os == 'ubuntu-latest'
+        run: tar -czf wms-offline-${{ github.ref_name }}-linux.tar.gz -C out wms
+
+      - name: Pack zip (windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: Compress-Archive -Path out/wms -DestinationPath wms-offline-${{ github.ref_name }}-win.zip
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wms-offline-${{ matrix.suffix }}
+          path: wms-offline-*.${{ matrix.ext }}
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: wms-offline-*.${{ matrix.ext }}
+          body: |
+            Offline package for ${{ matrix.suffix }}.
+
+            ⚠️ 平台限制：sqlite3 预编译二进制随运行时所在的操作系统分发；
+            Linux 包仅能在 Linux x64 使用，Windows 包仅能在 Windows x64 使用。
+            目标机器需预先安装 Node.js 20 LTS。
+
+            解压后执行：
+            - Linux:   ./install-offline.sh && ./start.sh
+            - Windows: install-offline.bat 然后 start.bat
+
+            默认管理员: admin / admin123（首次登录后立即修改）
+            数据文件: data/warehouse.db（直接备份此文件即可完整备份）

@@ -9,10 +9,10 @@
     "dev:build": "cd frontend && npm run build",
     "build": "cd frontend && npm run build",
     "install:all": "cd backend && npm install; cd ../frontend && npm install",
-    "init-db": "node database/init.js",
-    "docker:up": "docker compose up -d --build",
-    "docker:down": "docker compose down",
-    "docker:logs": "docker compose logs -f"
+    "init-db": "cd backend && npm run init-db",
+    "test": "jest --config jest.config.js",
+    "test:unit": "jest --config jest.config.js test/unit",
+    "test:integration": "jest --config jest.config.js test/integration"
   },
   "keywords": [
     "warehouse",

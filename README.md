@@ -1,367 +1,97 @@
 # 仓库管理系统 (Warehouse Management System)
-## 版本 v0.0.4 | 企业内网专用版
 
-专为企业设计的轻量化仓库管理系统，支持办公用品、耗材、电子产品、工具等各类物品的全生命周期管理，完全离线可用，无需外网依赖，一键启动部署。
+基于 Node.js + Express + **SQLite** + Vue 3 的局域网仓库管理系统。零外部数据库依赖，数据完全保存在单个 SQLite 文件中，适合内网离线部署。
 
-**核心新增功能：** ✅ 支持调用**本地计算机/手机摄像头**拍照，图片上传服务器后端进行 OCR 文字识别，自动提取商品型号和厂家信息，快速录入商品！
+## 特性
 
----
+- 商品 / 分类 / 供应商 / 仓库 主数据管理
+- 库存管理（多仓库、批次、库位、预警阈值）
+- 出入库流水（单据号自动生成，金额自动计算，审计字段）
+- 双重确认盘点（盘盈/盘亏自动生成库存调整流水）
+- 6 类报表（库存 / 出入库流水 / 盘点 / 供应商供货 / 库存预警 / 操作日志），支持 Excel + CSV 流式导出
+- OCR 图像识别（Tesseract，中英混合，离线）
+- RBAC：admin / manager / staff / warehouse_keeper
+- 统一的错误处理与结构化日志（winston）
 
-## ✨ 功能特性
-### 📦 核心业务功能
-| 模块 | 功能说明 |
-|------|----------|
-| **商品管理** | 产品增删改查、分类管理、规格管理、供应商关联、库存预警设置 |
-| **库存管理** | 实时库存查询、多仓库库存管理、批次追踪、库存上下限预警 |
-| **出入库管理** | 完整的入库/出库流程、审核机制、出入库记录追溯、关联供应商/客户 |
-| **库存盘点** | 双人盘点流程、自动计算盘盈盘亏、盘点报表生成、历史盘点记录查询 |
-| **供应商管理** | 供应商信息维护、等级管理、联系方式管理、供货记录查询 |
-| **仓库管理** | 多仓库支持、库位管理、仓库负责人配置 |
-| **分类管理** | 多级产品分类、自定义分类、分类排序 |
-| **仪表盘** | 库存统计、出入库趋势、数据概览、近30天业务数据可视化 |
-| **报表导出** | 库存报表、盘点报表、出入库报表导出 |
-| **拍照识别** | 🆕 调用本地摄像头拍照，服务器 OCR 自动识别商品型号和厂家，快速录入 |
+## 技术栈
 
-### 🔒 安全特性
-- JWT身份认证，token自动过期
-- 密码bcrypt加密存储，不可逆
-- 多角色权限控制（管理员/仓管员）
-- 接口权限校验，防止越权操作
-- 操作日志全程记录
+- **后端**: Node.js 20 · Express 4 · Sequelize v6 · sqlite3
+- **前端**: Vue 3 · Vite · Element Plus · Pinia
+- **测试**: Jest + supertest（sqlite `:memory:` 集成测试）
 
-### 📷 拍照识别特性
-- ✅ **调用本地设备摄像头**：摄像头始终是调用浏览器所在设备（你的电脑/手机），不调用服务器摄像头
-- ✅ **内网访问支持**：修改了浏览器安全检查，内网 IP HTTP 访问也能使用摄像头
-- ✅ **服务器后端 OCR**：图片上传到服务器识别，减轻客户端压力，识别更快更准确
-- ✅ **自动提取信息**：自动识别商品型号和生产厂家
+## 快速开始
 
-### 🖥️ 用户体验
-- 响应式设计，完美适配PC和移动端
-- Element Plus企业级UI组件，操作简洁直观
-- 统一错误提示，友好的交互反馈
-- 面包屑导航，操作路径清晰
-- 侧边栏可折叠，适配不同屏幕尺寸
-- **图形化一键启动** 🆕：Python Tkinter 图形化启动器，点击就能启动，不用打开终端
+### 环境要求
+- Node.js >= 18（推荐 20 LTS）
 
----
-
-## 🛠️ 技术栈
-| 层级 | 技术选型 | 版本 |
-|------|----------|------|
-| 前端 | Vue 3 + Vite + TypeScript | 3.x |
-| UI库 | Element Plus | 2.x |
-| 状态管理 | Pinia | 3.x |
-| 路由 | Vue Router | 4.x |
-| 后端 | Node.js + Express | 18.x+ |
-| 数据库 | MongoDB | 4.4.x |
-| OCR 识别 | Tesseract.js | 5.x |
-| ODM | Mongoose | 7.x |
-| 认证 | JWT + bcryptjs | - |
-| 图形化启动器 | Python Tkinter | Python 3 标准库 |
-
----
-
-## 🚀 快速开始
-
-### 🔹 Linux 系统 (推荐新方式)
-
-1. **克隆项目**
+### Linux / macOS
 ```bash
-git clone https://github.com/rongnb/warehouse-management-system.git
-cd warehouse-management-system
+./install.sh   # 安装后端/前端依赖 + 初始化 SQLite
+./start.sh     # 启动后端（默认 http://localhost:3000）
+# 前端开发服务器另开终端：
+cd frontend && npm run dev
 ```
 
-2. **一键安装**
-```bash
-chmod +x install.sh
-./install.sh
-```
-自动完成：环境检查 → MongoDB 安装 → 依赖安装 → 数据库初始化
-
-3. **图形化启动**
-```bash
-chmod +x gui-start.sh
-./gui-start.sh
-```
-窗口弹出后点击 **🚀 启动服务** 即可，自动打开浏览器。
-
-> 💡 如果 `./gui-start.sh` 提示缺少 tkinter，请安装：
-> ```bash
-> sudo apt install python3-tk
-> ```
-
-**命令行启动**（如果你不想用图形化）：
-```bash
-chmod +x start.sh
-./start.sh
-```
-
-### 🔹 Windows 系统
-### 🔹 第一次使用？
-#### 方案一：离线部署（推荐，内网环境零依赖）
-> 💡 完全不需要外网，所有依赖已打包在项目内
-
-1. **前置准备**
-   - 确保系统为 Windows 10/11 或 Windows Server 2016+
-   - 提前将整个项目包拷贝到内网机器上
-
-2. **一键安装**
-   ```batch
-   双击运行 install-offline.bat
-   ```
-   自动完成：依赖安装 → 数据库初始化 → 环境配置
-
-3. **一键启动**
-   ```batch
-   双击运行 start-portable.bat
-   ```
-   自动启动：MongoDB数据库 → 后端API服务 → 前端页面服务
-
-4. **访问系统**
-   打开浏览器访问：http://localhost:5173
-
-#### 方案二：在线部署（有外网环境）
-1. **环境要求**
-   - Node.js >= 18.0.0
-   - MongoDB >= 4.4（推荐使用4.4.x系列，与便携版版本一致，稳定性最佳）
-
-2. **自动安装**
-   ```batch
-   双击运行 install.bat
-   ```
-   自动完成：环境检查 → MongoDB下载安装 → 依赖安装 → 数据库初始化
-
-3. **启动服务**
-   ```batch
-   双击运行 start.bat
-   ```
-
----
-
-## ⚙️ 启停管理
-
-### Linux 图形化
-- 从系统应用菜单点击 **仓库管理系统** 启动
-- 或者终端运行 `./gui-start.sh`
-- 在GUI窗口点击启动/停止，自动打开浏览器
-
-### Linux 命令行
-```bash
-# 一键启动
-./start.sh
-
-# 按 Ctrl+C 停止所有服务
-```
-
-### 便携版启动/停止（完全离线，无需安装服务）
-```batch
-# 启动所有服务
-双击 start-portable.bat
-
-# 停止所有服务
-双击 stop-portable.bat
-```
-
-### 常规版启动/停止
-```batch
-# 一键启动
+### Windows
+```cmd
+install.bat
 start.bat
-
-# 一键停止
-stop.bat
-
-# 单独启动后端
-backend-start.bat
-
-# 单独启动前端
-frontend-start.bat
-
-# 单独启动MongoDB
-mongodb-start.bat
-
-# 检查MongoDB状态
-mongodb-status.bat
 ```
 
----
-
-## 🔑 默认账号
-| 角色 | 账号 | 密码 | 权限说明 |
-|------|------|------|----------|
-| 系统管理员 | `admin` | `123456` | 全功能权限，用户管理、系统配置、盘点复核 |
-| 仓管员A | `keeper_a` | `123456` | 发起盘点、录入盘点数据、出入库操作 |
-| 仓管员B | `keeper_b` | `123456` | 盘点复核、录入盘点数据、出入库操作 |
-
-> 💡 首次登录后请及时修改默认密码
-
----
-
-## 📖 使用说明
-
-### 拍照识别使用方法
-
-1. 在出入库或添加商品页面，点击 **拍照识别** 按钮
-2. 点击 **📷 使用拍照功能**，浏览器会请求摄像头权限，点击**允许**
-3. 对准商品标签拍照，点击 **确认**
-4. 图片上传到服务器，OCR 自动识别出型号和厂家
-5. 确认识别结果，完成商品录入
-
-> 💡 拍照提示：
-> - 尽量保持标签平整，光线充足
-> - 如果识别不准确，可以手动修改结果
-> - 也可以选择 **📁 从相册选择图片** 上传
-
-### 1. 商品管理
-- **添加商品**：点击"新增商品"按钮，填写商品信息（名称、分类、规格、供应商、库存预警值等）
-- **编辑商品**：在商品列表中点击"编辑"按钮
-- **删除商品**：在商品列表中点击"删除"按钮（谨慎操作！）
-- **搜索商品**：使用搜索框按名称搜索
-- **批量操作**：支持批量导入导出
-
-### 2. 库存管理
-- **实时库存查询**：首页仪表盘显示库存概览
-- **库存详情**：点击商品查看库存详情，包括批次信息和库存流水
-- **库存预警**：当库存低于预警值时，系统会显示红色预警标识
-- **库存调拨**：支持在不同仓库间调拨库存
-
-### 3. 出入库管理
-#### 入库流程
-1. 点击"新增入库单"
-2. 选择供应商和入库仓库
-3. 添加入库商品（支持**拍照识别**快速添加）
-4. 填写入库数量和批次号
-5. 提交审核（由管理员审核）
-6. 审核通过后，库存自动增加
-
-#### 出库流程
-1. 点击"新增出库单"
-2. 选择领用部门/客户和出库仓库
-3. 添加出库商品
-4. 填写出库数量和用途
-5. 提交审核（由管理员审核）
-6. 审核通过后，库存自动减少
-
-### 4. 库存盘点
-1. **发起盘点**：仓管员点击"发起盘点"，选择仓库
-2. **录入数据**：系统自动获取账面库存，仓管员录入实际盘点数量
-3. **自动计算**：系统自动计算盘盈盘亏和差异金额
-4. **复核确认**：仓管员B进行复核确认
-5. **生成报表**：确认后生成盘点报表，库存自动更新
-
-### 5. 供应商管理
-- **添加供应商**：点击"新增供应商"，填写供应商信息
-- **供应商评级**：支持设置供应商等级（A/B/C级）
-- **供货记录**：查看供应商的供货历史
-
-### 6. 仓库管理
-- **添加仓库**：点击"新增仓库"，填写仓库信息
-- **库位管理**：配置仓库的库位信息
-- **负责人配置**：设置仓库负责人
-
-### 7. 分类管理
-- **多级分类**：支持无限级分类
-- **分类排序**：拖动调整分类顺序
-- **分类属性**：为分类设置自定义属性
-
-### 8. 数据报表
-- **库存报表**：导出当前库存数据
-- **出入库报表**：导出出入库记录
-- **盘点报表**：导出盘点历史数据
-
----
-
-## 📁 项目结构
+### 默认管理员账号
 ```
-warehouse-management-system/
-├── backend/                   # 后端服务代码
-│   ├── middleware/            # 中间件（JWT认证等）
-│   ├── models/                # 数据模型（8个业务模型）
-│   ├── routes/                # API接口路由
-│   │   └── ocr.js             # 🆕 OCR识别接口
-│   ├── .env.example           # 环境配置示例
-│   ├── server.js              # 后端入口文件
-│   └── package.json           # 后端依赖配置
-├── frontend/                  # 前端应用代码
-│   ├── src/
-│   │   ├── api/               # API接口封装
-│   │   │   └── ocr.ts          # 🆕 OCR识别API
-│   │   ├── components/        # 公共组件
-│   │   │   ├── CameraComponent.vue       # 摄像头组件
-│   │   │   └── ImageRecognitionComponent.vue # 图像识别组件
-│   │   ├── router/            # 路由配置
-│   │   ├── stores/            # Pinia全局状态管理
-│   │   ├── utils/             # 工具函数
-│   │   ├── views/             # 页面组件（8个业务页面）
-│   │   ├── App.vue            # 根组件
-│   │   └── main.ts            # 前端入口文件
-│   ├── package.json           # 前端依赖配置
-│   └── vite.config.ts         # Vite配置
-├── electron-manager/           # 旧 Electron 图形启动器（保留但默认不用）
-├── mongodb/                   # MongoDB便携版（可选，离线部署用）
-│   └── bin/                   # MongoDB可执行文件
-├── database/                  # 数据库脚本
-│   └── init.js                # 初始化脚本（默认数据）
-├── data/                      # 数据库数据目录（自动生成）
-├── gui-start.py                # 🆕 Python Tkinter 图形化启动器
-├── gui-start.sh                # 🆕 Linux 图形化启动脚本
-├── install.sh                  # Linux 一键安装脚本
-├── start.sh                   # Linux 一键启动脚本
-├── *.bat                      # Windows 批处理脚本（启动、安装、管理等）
-├── warehouse-manager.desktop   # 🆕 Linux 桌面入口文件
-├── README.md                  # 本文档
-├── QUICKSTART.md              # 快速上手指南
-└── DEPLOY_INSTRUCTION.md      # 详细部署说明
+用户名: admin
+密码:   admin123
+```
+**首次登录后请立即修改密码。**
+
+### 数据文件位置
+`data/warehouse.db`（SQLite 单文件）— 备份该文件即完整备份。
+
+## 目录结构
+
+```
+.
+├── backend/
+│   ├── db/             # Sequelize 连接 + 初始化脚本（含种子数据）
+│   ├── models/         # 9 个 Sequelize 模型 + 关联
+│   ├── routes/         # HTTP 路由（Express）
+│   ├── services/       # 业务逻辑（reports, ocr）
+│   ├── middleware/     # auth, errorHandler, asyncHandler
+│   ├── errors/         # AppError 及子类（统一错误体系）
+│   ├── utils/          # logger
+│   └── server.js       # 入口
+├── frontend/           # Vue 3 + Vite
+├── data/               # SQLite 数据库文件目录（.gitignore）
+├── test/
+│   ├── unit/
+│   ├── integration/    # sqlite :memory: 集成测试
+│   └── fixtures/
+├── .github/workflows/  # CI + Release offline package
+├── install.sh / install.bat
+├── install-offline.sh / install-offline.bat
+└── start.sh / start.bat
 ```
 
----
+## 测试
 
-## ❓ 常见问题
+```bash
+cd backend && npm install
+cd .. && npm test           # 等价 npx jest --config jest.config.js
+```
+当前：47 passed / 4 skipped（skipped：Excel 流式 × 2，OCR 真 tesseract × 2）。
 
-### Q1：摄像头无法启动？
-A：
-- Chrome 浏览器默认禁止 HTTP 非 localhost 使用摄像头，这是浏览器安全策略
-- 如果是内网访问（如 `http://192.168.x.x`），请按照以下步骤设置：
-  1. 在 Chrome 地址栏打开：`chrome://flags/#unsafely-treat-insecure-origin-as-secure`
-  2. 在输入框添加你的地址：`http://192.168.x.x:5173`
-  3. 选择 `Enabled`，重启 Chrome 即可
+## 部署
 
-### Q2：启动后无法访问页面？
-A：检查端口5173是否被占用，或修改 `frontend/vite.config.ts` 中的端口号。
+- 开发：`./install.sh && ./start.sh`
+- 生产（推荐 pm2）：`cd backend && npm ci --omit=dev && node db/init.js && pm2 start server.js --name wms`
+- Docker：`docker build -t wms backend/ && docker run -p 3000:3000 -v $(pwd)/data:/app/../data wms`
+- 离线包：Tag `v*` 触发 `.github/workflows/release.yml`，产出 `wms-offline-vX.Y.Z-linux.tar.gz` / `-win.zip`（详见 DEPLOY_INSTRUCTION.md）
 
-### Q3：数据库连接失败？
-A：
-1. 检查MongoDB服务是否启动，运行 `mongodb-status.bat` 查看状态
-2. 确认27017端口没有被其他程序占用
-3. 便携版检查 `mongodb/bin/mongod.exe` 是否存在
+## 历史说明
 
-### Q4：忘记管理员密码？
-A：运行 `backend/reset-admin-password.bat` 可重置管理员密码为123456。
-在图形化界面中，直接点击"🔐 重置密码"按钮即可完成重置。
+v1.0 之前系统使用 MongoDB。v1.0 迁移到 SQLite 以简化离线部署，不再需要 mongod 服务。若有历史 MongoDB 数据需导入，请参考 DEPLOY_INSTRUCTION.md 中的迁移章节（需手写一次性导出导入脚本）。
 
-### Q5：如何修改服务端口？
-A：
-- 后端端口：修改 `backend/server.js` 中的端口配置
-- 前端端口：修改 `frontend/vite.config.ts` 中的server.port
-- 数据库端口：修改 `backend/.env` 中的MONGODB_URI连接地址
+## 许可证
 
-### Q6：数据如何备份？
-A：直接拷贝整个 `data/db` 目录即可，所有数据都存在这个目录中，恢复时直接覆盖即可。
-
-### Q7：图形化窗口不显示？
-A：
-- 确保你在本地桌面 Linux 环境运行，不是通过 SSH 远程
-- 如果通过 SSH X11 转发，请确保 X 服务配置正确
-- 或者直接使用命令行 `./start.sh` 启动，然后手动打开浏览器访问
-
----
-
-## 📞 技术支持
-- 部署问题：检查DEPLOY_INSTRUCTION.md部署文档
-- 使用问题：参考系统内置的帮助中心
-- 定制开发：联系系统管理员
-
----
-
-## 📄 许可证
-MIT License
-© 2024 企业内部使用
+ISC
