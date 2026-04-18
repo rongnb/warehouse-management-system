@@ -13,7 +13,7 @@ module.exports = (sequelize) => {
       unique: true,
     },
     type: {
-      type: DataTypes.ENUM('in', 'out', 'stocktake_profit', 'stocktake_loss'),
+      type: DataTypes.ENUM('in', 'out', 'transfer', 'stocktake_profit', 'stocktake_loss'),
       allowNull: false,
     },
     productId: {
@@ -149,22 +149,23 @@ module.exports = (sequelize) => {
     timestamps: true,
   });
 
-  Transaction.beforeCreate(async (transaction) => {
+  Transaction.beforeValidate(async (transaction) => {
     if (!transaction.transactionNo) {
       let prefix = 'OUT';
       if (transaction.type === 'in') prefix = 'IN';
+      if (transaction.type === 'transfer') prefix = 'TRF';
       if (transaction.type === 'stocktake_profit') prefix = 'PROFIT';
       if (transaction.type === 'stocktake_loss') prefix = 'LOSS';
-      
+
       const date = new Date().toISOString().slice(0, 10).replace(/-/g, '');
       const random = Math.random().toString(36).substr(2, 6).toUpperCase();
       transaction.transactionNo = `${prefix}${date}${random}`;
     }
-    
+
     if (transaction.quantity && (transaction.price || transaction.unitPrice)) {
       transaction.totalAmount = transaction.quantity * (transaction.price || transaction.unitPrice);
     }
-    
+
     if (!transaction.operator && transaction.createdBy) {
       transaction.operator = transaction.createdBy;
     }

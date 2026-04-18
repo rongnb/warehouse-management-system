@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const { User } = require('../models');
+const { getJwtSecret } = require('../config/jwt');
 
 const auth = async (req, res, next) => {
   try {
@@ -9,7 +10,7 @@ const auth = async (req, res, next) => {
       return res.status(401).json({ message: '请先登录' });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'warehouse-management-system-jwt-secret-key-2024');
+    const decoded = jwt.verify(token, getJwtSecret());
     const user = await User.findByPk(decoded.userId, {
       attributes: { exclude: ['password'] }
     });

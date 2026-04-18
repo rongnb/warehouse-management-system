@@ -566,7 +566,7 @@ router.put('/:id/cancel', auth, requireRole(['admin', 'manager']), asyncHandler(
 router.post('/:id/cancel', auth, requireRole(['admin', 'manager']), asyncHandler(handleCancel));
 
 // 更新交易记录
-router.put('/:id', auth, asyncHandler(async (req, res) => {
+router.put('/:id', auth, requireRole(['admin', 'manager']), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const {
     productId,

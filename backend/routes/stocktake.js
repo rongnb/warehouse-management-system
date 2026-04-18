@@ -145,7 +145,7 @@ router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), as
 }));
 
 // 更新盘库单（录入实际库存）
-router.put('/:id', auth, asyncHandler(async (req, res) => {
+router.put('/:id', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { items, remark } = req.body;
 
@@ -218,7 +218,7 @@ router.put('/:id', auth, asyncHandler(async (req, res) => {
 }));
 
 // 提交盘库单（进入核实流程）
-router.post('/:id/submit', auth, asyncHandler(async (req, res) => {
+router.post('/:id/submit', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   const stocktake = await Stocktake.findByPk(id);
@@ -237,7 +237,7 @@ router.post('/:id/submit', auth, asyncHandler(async (req, res) => {
 }));
 
 // 核实盘库单 - 双人核实
-router.post('/:id/confirm', auth, asyncHandler(async (req, res) => {
+router.post('/:id/confirm', auth, requireRole(['admin', 'manager']), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { remark } = req.body;
 
@@ -325,7 +325,7 @@ router.post('/:id/confirm', auth, asyncHandler(async (req, res) => {
 }));
 
 // 取消盘库单
-router.post('/:id/cancel', auth, asyncHandler(async (req, res) => {
+router.post('/:id/cancel', auth, requireRole(['admin', 'manager']), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const { reason } = req.body;
 

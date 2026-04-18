@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const rateLimit = require('express-rate-limit');
 const { User, Sequelize } = require('../models');
 const { auth } = require('../middleware/auth');
+const { getJwtSecret, JWT_EXPIRES_IN } = require('../config/jwt');
 const { asyncHandler } = require('../middleware/errorHandler');
 const { BadRequestError, ForbiddenError } = require('../errors/AppError');
 const logger = require('../utils/logger');
@@ -54,8 +55,8 @@ router.post('/login', loginLimiter, asyncHandler(async (req, res) => {
 
   const token = jwt.sign(
     { userId: user.id, username: user.username, role: user.role },
-    process.env.JWT_SECRET || 'warehouse-management-system-jwt-secret-key-2024',
-    { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
+    getJwtSecret(),
+    { expiresIn: JWT_EXPIRES_IN }
   );
 
   res.json({

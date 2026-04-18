@@ -157,26 +157,33 @@ router.post('/:id/adjust', auth, requireRole(['admin', 'manager']), asyncHandler
     throw new BadRequestError('参数不完整');
   }
 
-  const inventory = await Inventory.findByPk(id, {
-    include: [
-      { model: Product, as: 'product', attributes: ['name', 'sku', 'unit'], required: false },
-      { model: Warehouse, as: 'warehouse', attributes: ['name'], required: false },
-    ],
+  const inventory = await sequelize.transaction(async (t) => {
+    // 行级锁，避免并发修改导致丢失更新
+    const inv = await Inventory.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+
+    if (!inv) {
+      throw new NotFoundError('库存记录不存在');
+    }
+
+    // 调整后不得为负
+    if (inv.quantity + Number(quantity) < 0) {
+      throw new BadRequestError('库存不足，无法执行该调整');
+    }
+
+    inv.quantity += Number(quantity);
+    inv.updatedBy = req.user.id;
+    inv.lastUpdated = new Date();
+    await inv.save({ transaction: t });
+
+    await inv.reload({
+      include: [
+        { model: Product, as: 'product', attributes: ['name', 'sku', 'unit'], required: false },
+        { model: Warehouse, as: 'warehouse', attributes: ['name'], required: false },
+      ],
+      transaction: t,
+    });
+    return inv;
   });
-
-  if (!inventory) {
-    throw new NotFoundError('库存记录不存在');
-  }
-
-  // Check if adjustment would result in negative quantity
-  if (inventory.quantity + quantity < 0) {
-    throw new BadRequestError('库存不足，无法执行该调整');
-  }
-
-  inventory.quantity += quantity;
-  inventory.updatedBy = req.user.id;
-  inventory.lastUpdated = new Date();
-  await inventory.save();
 
   res.json({
     message: '库存调整成功',
@@ -192,36 +199,41 @@ router.post('/adjust', auth, requireRole(['admin', 'manager']), asyncHandler(asy
     throw new BadRequestError('参数不完整');
   }
 
-  // Find existing inventory record
-  let inventory = await Inventory.findOne({
-    where: { productId: product, warehouseId: warehouse },
-  });
-
-  if (inventory) {
-    if (inventory.quantity + quantity < 0) {
-      throw new BadRequestError('库存不足，无法执行该调整');
-    }
-    inventory.quantity += quantity;
-    inventory.updatedBy = req.user.id;
-    inventory.lastUpdated = new Date();
-    await inventory.save();
-  } else {
-    if (quantity <= 0) {
-      throw new BadRequestError('该商品在指定仓库没有库存记录，无法执行出库操作');
-    }
-    inventory = await Inventory.create({
-      productId: product,
-      warehouseId: warehouse,
-      quantity,
-      updatedBy: req.user.id,
+  const inventory = await sequelize.transaction(async (t) => {
+    let inv = await Inventory.findOne({
+      where: { productId: product, warehouseId: warehouse },
+      transaction: t,
+      lock: t.LOCK.UPDATE,
     });
-  }
 
-  await inventory.reload({
-    include: [
-      { model: Product, as: 'product', attributes: ['name', 'sku', 'unit'], required: false },
-      { model: Warehouse, as: 'warehouse', attributes: ['name'], required: false },
-    ],
+    if (inv) {
+      if (inv.quantity + Number(quantity) < 0) {
+        throw new BadRequestError('库存不足，无法执行该调整');
+      }
+      inv.quantity += Number(quantity);
+      inv.updatedBy = req.user.id;
+      inv.lastUpdated = new Date();
+      await inv.save({ transaction: t });
+    } else {
+      if (Number(quantity) <= 0) {
+        throw new BadRequestError('该商品在指定仓库没有库存记录，无法执行出库操作');
+      }
+      inv = await Inventory.create({
+        productId: product,
+        warehouseId: warehouse,
+        quantity: Number(quantity),
+        updatedBy: req.user.id,
+      }, { transaction: t });
+    }
+
+    await inv.reload({
+      include: [
+        { model: Product, as: 'product', attributes: ['name', 'sku', 'unit'], required: false },
+        { model: Warehouse, as: 'warehouse', attributes: ['name'], required: false },
+      ],
+      transaction: t,
+    });
+    return inv;
   });
 
   res.json({
