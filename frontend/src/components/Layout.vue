@@ -65,6 +65,33 @@
           <el-icon><Camera /></el-icon>
           <template #title>OCR识别测试</template>
         </el-menu-item>
+
+        <!-- 报表中心：管理员/经理可见 -->
+        <el-menu-item
+          v-if="userInfo?.role === 'admin' || userInfo?.role === 'manager'"
+          index="/reports"
+        >
+          <el-icon><Histogram /></el-icon>
+          <template #title>报表中心</template>
+        </el-menu-item>
+
+        <!-- 系统设置：仅管理员可见 -->
+        <el-menu-item
+          v-if="userInfo?.role === 'admin'"
+          index="/system"
+        >
+          <el-icon><Setting /></el-icon>
+          <template #title>系统设置</template>
+        </el-menu-item>
+
+        <!-- 日志管理：仅管理员可见 -->
+        <el-menu-item
+          v-if="userInfo?.role === 'admin'"
+          index="/logs"
+        >
+          <el-icon><Document /></el-icon>
+          <template #title>日志管理</template>
+        </el-menu-item>
       </el-menu>
     </el-aside>
 
@@ -143,7 +170,10 @@ import {
   OfficeBuilding,
   Menu as MenuIcon,
   User,
-  Camera
+  Camera,
+  Histogram,
+  Setting,
+  Document
 } from '@element-plus/icons-vue';
 
 const store = useGlobalStore();

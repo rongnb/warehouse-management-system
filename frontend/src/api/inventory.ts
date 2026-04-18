@@ -60,6 +60,23 @@ export const inventoryApi = {
       data,
     })
   },
+
+  // 单条库存盘点（按商品+仓库录入实际数量）
+  check: (data: { product: string; warehouse: string; actualQuantity: number; remark?: string }) => {
+    return request({
+      url: '/inventory/check',
+      method: 'post',
+      data,
+    })
+  },
+
+  // 查询某个商品在所有仓库的库存
+  getByProduct: (productId: string) => {
+    return request({
+      url: `/inventory/product/${productId}`,
+      method: 'get',
+    })
+  },
 }
 
 export default inventoryApi

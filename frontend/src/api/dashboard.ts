@@ -42,6 +42,14 @@ export const dashboardApi = {
       method: 'get',
     })
   },
+
+  // 获取最近出库记录
+  getRecentOutbound: () => {
+    return request({
+      url: '/dashboard/recent-outbound',
+      method: 'get',
+    })
+  },
 }
 
 export default dashboardApi

@@ -199,19 +199,37 @@ function getLogFileType(filename) {
 }
 
 function getDiskUsage() {
+  // 使用 Node 18+ 内置 fs.statfsSync 获取真实磁盘使用量；旧版本或异常时回退为"未知"
   try {
-    return {
-      available: '未知',
-      total: '未知',
-      used: '未知'
-    };
+    if (typeof fs.statfsSync === 'function') {
+      // 以日志目录所在分区为基准；若日志目录不存在则使用进程工作目录
+      const target = fs.existsSync(logsDir) ? logsDir : process.cwd();
+      const stat = fs.statfsSync(target);
+      const total = stat.blocks * stat.bsize;
+      const free = stat.bavail * stat.bsize;
+      const used = total - free;
+      return {
+        total,
+        totalFormatted: formatFileSize(total),
+        used,
+        usedFormatted: formatFileSize(used),
+        available: free,
+        availableFormatted: formatFileSize(free),
+        usedPercent: total > 0 ? Math.round((used / total) * 10000) / 100 : 0,
+      };
+    }
   } catch (e) {
-    return {
-      available: '未知',
-      total: '未知',
-      used: '未知'
-    };
+    // fall through to unknown
   }
+  return {
+    total: null,
+    totalFormatted: '未知',
+    used: null,
+    usedFormatted: '未知',
+    available: null,
+    availableFormatted: '未知',
+    usedPercent: null,
+  };
 }
 
 function readLastLines(filePath, maxLines) {

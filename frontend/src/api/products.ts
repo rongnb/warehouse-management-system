@@ -52,6 +52,19 @@ export const productsApi = {
       method: 'get',
     })
   },
+
+  // 通过 Excel 文件批量导入商品
+  // file: 浏览器侧 File 对象（来自 <input type="file">）
+  import: (file: File) => {
+    const formData = new FormData()
+    formData.append('file', file)
+    return request({
+      url: '/products/import',
+      method: 'post',
+      data: formData,
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+  },
 }
 
 export default productsApi
