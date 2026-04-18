@@ -159,7 +159,7 @@ router.post('/:id/adjust', auth, requireRole(['admin', 'manager']), asyncHandler
 
   const inventory = await sequelize.transaction(async (t) => {
     // 行级锁，避免并发修改导致丢失更新
-    const inv = await Inventory.findByPk(id, { transaction: t, lock: t.LOCK.UPDATE });
+    const inv = await Inventory.findByPk(id, { transaction: t, lock: t.LOCK ? t.LOCK.UPDATE : Sequelize.Transaction.LOCK.UPDATE });
 
     if (!inv) {
       throw new NotFoundError('库存记录不存在');
@@ -203,7 +203,7 @@ router.post('/adjust', auth, requireRole(['admin', 'manager']), asyncHandler(asy
     let inv = await Inventory.findOne({
       where: { productId: product, warehouseId: warehouse },
       transaction: t,
-      lock: t.LOCK.UPDATE,
+      lock: t.LOCK ? t.LOCK.UPDATE : Sequelize.Transaction.LOCK.UPDATE,
     });
 
     if (inv) {

@@ -4,6 +4,7 @@ require('dotenv').config({ path: path.join(__dirname, '.env') });
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const logger = require('./utils/logger');
 const { connect } = require('./db');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
@@ -47,6 +48,19 @@ async function start() {
   app.use(express.json({ limit: '10mb' }));
   app.use(express.urlencoded({ extended: true, limit: '10mb' }));
   app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+  // 全局 API 限流：默认每 IP 15 分钟 600 次（约 40 req/min），可通过 RATE_LIMIT_MAX/RATE_LIMIT_WINDOW_MS 调整。
+  // 测试环境下禁用，避免影响 supertest 大量并发用例。
+  if (process.env.NODE_ENV !== 'test') {
+    const apiLimiter = rateLimit({
+      windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
+      max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 600,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { success: false, message: '请求过于频繁，请稍后再试', code: 'RATE_LIMITED' },
+    });
+    app.use('/api/', apiLimiter);
+  }
 
   app.use('/api/auth', require('./routes/auth'));
   app.use('/api/users', require('./routes/users'));
