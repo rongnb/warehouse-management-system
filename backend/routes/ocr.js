@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { parseOCRResult, initializeWorker } = require('../services/ocr');
+const { parseOCRResult, initializeWorker, recognizeWithMultiplePSM } = require('../services/ocr');
 
 const router = express.Router();
 
@@ -67,15 +67,15 @@ router.post('/recognize', auth, upload.single('image'), asyncHandler(async (req,
     // 初始化worker
     const worker = await initializeWorker();
 
-    // 执行识别
+    // 执行识别（尝试多种 PSM 模式以提升多行中英文识别成功率）
     logger.info('🔍 开始OCR识别...');
     const recognizeStartTime = Date.now();
-    const result = await worker.recognize(imagePath);
+    const recognizedText = await recognizeWithMultiplePSM(worker, imagePath);
     const recognizeDuration = Date.now() - recognizeStartTime;
     logger.info(`✅ OCR识别完成，耗时: ${recognizeDuration}ms`);
 
     // 解析结果
-    const parsedResult = parseOCRResult(result.data.text);
+    const parsedResult = parseOCRResult(recognizedText);
 
     const totalDuration = Date.now() - totalStartTime;
     logger.info(`🏁 整个OCR流程完成，总耗时: ${totalDuration}ms`);

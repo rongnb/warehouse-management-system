@@ -3,6 +3,7 @@ const { createLogger, format, transports } = winston;
 const DailyRotateFile = require('winston-daily-rotate-file');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 // 确保日志目录存在 - 项目根目录的logs文件夹
 const logsDir = path.join(__dirname, '../../logs');
@@ -126,7 +127,7 @@ logger.httpMiddleware = (req, res, next) => {
 
 // 请求ID生成器
 logger.requestId = (req, res, next) => {
-  req.requestId = require('crypto').randomUUID();
+  req.requestId = crypto.randomUUID();
   res.setHeader('X-Request-ID', req.requestId);
   next();
 };

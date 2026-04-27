@@ -139,7 +139,7 @@ module.exports = (sequelize) => {
     timestamps: true,
   });
 
-  Stocktake.beforeCreate(async (stocktake) => {
+  Stocktake.beforeValidate(async (stocktake) => {
     if (!stocktake.stocktakeNo) {
       const date = new Date();
       const year = date.getFullYear();

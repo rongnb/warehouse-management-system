@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia';
 import { authApi } from '@/api/auth';
-import axios from 'axios';
 
 interface UserInfo {
   id: string;
@@ -115,60 +114,3 @@ export const useLoadingStore = defineStore('loading', {
     },
   },
 });
-
-// 创建 axios 实例
-// apiClient 使用者已经在路径中包含了 /api，所以这里 baseURL 是空
-const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '',
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
-});
-
-// 请求拦截器
-apiClient.interceptors.request.use(
-  (config) => {
-    const token = localStorage.getItem('token');
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-// 响应拦截器
-apiClient.interceptors.response.use(
-  (response) => {
-    return response;
-  },
-  (error) => {
-    console.error('请求错误详情:', error)
-
-    if (error.response) {
-      const { status, data, config } = error.response
-
-      console.error('响应状态:', status)
-      console.error('响应数据:', data)
-      console.error('请求URL:', config.url)
-      console.error('请求参数:', config.params || config.data)
-    } else if (error.request) {
-      console.error('网络错误，请检查网络连接')
-    } else {
-      console.error('请求配置错误')
-    }
-
-    if (error.response?.status === 401) {
-      // token 过期或无效，清除本地存储
-      const globalStore = useGlobalStore();
-      globalStore.logout();
-    }
-
-    return Promise.reject(error);
-  }
-);
-
-export { apiClient };

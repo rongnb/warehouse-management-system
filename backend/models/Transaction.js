@@ -149,7 +149,7 @@ module.exports = (sequelize) => {
     timestamps: true,
   });
 
-  Transaction.beforeCreate(async (transaction) => {
+  Transaction.beforeValidate(async (transaction) => {
     if (!transaction.transactionNo) {
       let prefix = 'OUT';
       if (transaction.type === 'in') prefix = 'IN';

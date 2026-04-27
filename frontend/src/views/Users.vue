@@ -205,7 +205,8 @@ import {
 } from '@element-plus/icons-vue';
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { apiClient, useGlobalStore } from '@/stores';
+import { useGlobalStore } from '@/stores';
+import { usersApi } from '@/api/users';
 
 const store = useGlobalStore();
 const isAdmin = computed(() => store.userInfo?.role === 'admin');
@@ -264,7 +265,7 @@ const loadUsers = async () => {
       ...searchForm,
     };
 
-    const response = await apiClient.get('/api/users', { params });
+    const response = await usersApi.getList(params);
     tableData.value = response.data.users;
     pagination.total = response.data.pagination.total;
   } catch (error) {
@@ -325,7 +326,7 @@ const handleAdd = () => {
 const handleEdit = (row: any) => {
   isEdit.value = true;
   Object.assign(form, {
-    id: row._id,
+    id: row.id,
     username: row.username,
     realName: row.realName,
     email: row.email,
@@ -348,7 +349,7 @@ const handleDelete = async (row: any) => {
       }
     );
 
-    await apiClient.delete(`/api/users/${row._id}`);
+    await usersApi.delete(row.id);
     ElMessage.success('删除成功');
     loadUsers();
   } catch (error) {
@@ -366,10 +367,10 @@ const handleSubmit = async () => {
     submitLoading.value = true;
 
     if (isEdit.value) {
-      await apiClient.put(`/api/users/${form.id}`, form);
+      await usersApi.update(form.id, form);
       ElMessage.success('更新成功');
     } else {
-      await apiClient.post('/api/users', form);
+      await usersApi.create(form);
       ElMessage.success('创建成功');
     }
 

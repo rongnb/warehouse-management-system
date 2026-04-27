@@ -7,6 +7,7 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "init-db": "node db/init.js",
+    "reset-db": "node db/init.js --reset",
     "test": "jest --config ../jest.config.js",
     "test:unit": "jest ../test/unit --config ../jest.config.js",
     "test:integration": "jest ../test/integration --config ../jest.config.js",

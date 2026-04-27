@@ -21,36 +21,26 @@ export class ImageRecognizer {
   }
 
   constructor() {
-    console.log('🏗️ ImageRecognizer实例已创建（OCR模式）')
     // 构造函数中立即初始化Worker
-    this.initializeWorker().catch(error => {
-      console.error('❌ Worker预初始化失败:', error)
+    this.initializeWorker().catch(_error => {
     })
   }
 
   async initialize(): Promise<boolean> {
-    console.log('🔧 开始初始化OCR识别器...')
-    const startTime = Date.now()
-
     try {
       await this.initializeWorker()
-      const duration = Date.now() - startTime
-      console.log(`✅ OCR识别器初始化完成，耗时: ${duration}ms`)
       return this.workerInitialized
     } catch (error) {
-      console.error('❌ OCR识别器初始化失败:', error)
       return false
     }
   }
 
   private async initializeWorker(): Promise<void> {
     if (this.workerInitialized) {
-      console.log('✅ Tesseract Worker已就绪')
       return
     }
 
     if (this.workerInitializing) {
-      console.log('⏳ Tesseract Worker正在初始化中...')
       await new Promise(resolve => {
         const checkInterval = setInterval(() => {
           if (this.workerInitialized || !this.workerInitializing) {
@@ -64,35 +54,19 @@ export class ImageRecognizer {
 
     this.workerInitializing = true
     const startTime = Date.now()
-    console.log('🔍 开始初始化Tesseract Worker...')
 
     try {
-      console.log('📦 开始创建Worker...')
+      this.worker = await Tesseract.createWorker('chi_sim+eng', 1)
 
-      this.worker = await Tesseract.createWorker('chi_sim+eng', 1, {
-        logger: (m: any) => {
-          const progress = m.progress ? Math.round(m.progress * 100) + '%' : ''
-          console.log(`[Tesseract] ${m.status} ${progress}`)
-        }
-      })
-
-      console.log('✅ Worker创建成功，开始配置参数...')
-
-      // 配置Tesseract参数 - 优化中英文混合多行文本识别
+      // 仅设置允许初始化后修改的参数
+      // PSM 6: 假设是统一的文本块，对于商品表面拍照的多行文字效果最佳
       await this.worker.setParameters({
-        'tessedit_pageseg_mode': '3',  // PSM.AUTO - 自动检测页面布局，适合多行文本
-        'tessedit_ocr_engine_mode': '1', // OEM.LSTM_ONLY - LSTM引擎，中文识别率远高于传统引擎
-        // 注意：不设置 tessedit_char_whitelist，否则会阻止中文字符识别
-        'preserve_interword_spaces': '1', // 保留单词间空格
+        'tessedit_pageseg_mode': '6',
+        'preserve_interword_spaces': '1',
       })
-
-      console.log('✅ Tesseract参数配置完成')
 
       this.workerInitialized = true
-      console.log(`✅ Tesseract Worker就绪: ${Date.now() - startTime}ms`)
     } catch (error) {
-      console.error('❌ Tesseract Worker初始化失败:', error)
-      console.error('❌ 错误详情:', JSON.stringify(error))
       this.worker = null
       this.workerInitialized = false
     } finally {
@@ -102,7 +76,6 @@ export class ImageRecognizer {
 
   // 图像压缩与预处理
   private async compressImage(imageData: string): Promise<string> {
-    console.log('🖼️ 开始图像压缩与预处理...')
     const startTime = Date.now()
 
     return new Promise((resolve, reject) => {
@@ -133,110 +106,180 @@ export class ImageRecognizer {
         // 绘制原始图像
         ctx.drawImage(img, 0, 0, width, height)
 
-        // 图像预处理：灰度化 + 对比度增强 + 自适应二值化
         const imageDataCtx = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const data = imageDataCtx.data
+        const grayData = new Uint8ClampedArray(canvas.width * canvas.height)
 
-        // 第一步：灰度化
-        for (let i = 0; i < data.length; i += 4) {
-          const gray = data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114
-          data[i] = gray
-          data[i + 1] = gray
-          data[i + 2] = gray
+        // 第一步：灰度化（使用加权和，人眼对绿色更敏感）
+        for (let i = 0; i < imageDataCtx.data.length; i += 4) {
+          grayData[i / 4] = Math.round(
+            imageDataCtx.data[i] * 0.299 +
+            imageDataCtx.data[i + 1] * 0.587 +
+            imageDataCtx.data[i + 2] * 0.114
+          )
         }
 
-        // 第二步：对比度增强（CLAHE简化版 - 直方图拉伸）
-        let minVal = 255, maxVal = 0
-        for (let i = 0; i < data.length; i += 4) {
-          if (data[i] < minVal) minVal = data[i]
-          if (data[i] > maxVal) maxVal = data[i]
-        }
-        const range = maxVal - minVal
-        if (range > 0 && range < 200) {
-          // 仅当对比度不足时进行拉伸
-          for (let i = 0; i < data.length; i += 4) {
-            const stretched = Math.round(((data[i] - minVal) / range) * 255)
-            data[i] = stretched
-            data[i + 1] = stretched
-            data[i + 2] = stretched
-          }
+        // 第二步：Otsu自适应二值化（自动计算最优阈值，保留中英文笔画细节）
+        const otsuThreshold = this.computeOtsuThreshold(grayData, canvas.width, canvas.height)
+
+        // 应用二值化：黑底白字更适合OCR
+        for (let i = 0; i < grayData.length; i++) {
+          const val = grayData[i] > otsuThreshold ? 255 : 0
+          const pi = i * 4
+          imageDataCtx.data[pi] = val
+          imageDataCtx.data[pi + 1] = val
+          imageDataCtx.data[pi + 2] = val
         }
 
-        // 第三步：锐化（增强文字边缘）
         ctx.putImageData(imageDataCtx, 0, 0)
-        const sharpened = ctx.getImageData(0, 0, canvas.width, canvas.height)
-        const src = imageDataCtx.data
-        const dst = sharpened.data
-        const w = canvas.width
-        // 简化的Unsharp Mask锐化
-        for (let y = 1; y < canvas.height - 1; y++) {
-          for (let x = 1; x < w - 1; x++) {
-            const idx = (y * w + x) * 4
-            // 拉普拉斯算子
-            const laplacian = 5 * src[idx]
-              - src[((y - 1) * w + x) * 4]
-              - src[((y + 1) * w + x) * 4]
-              - src[(y * w + x - 1) * 4]
-              - src[(y * w + x + 1) * 4]
-            const val = Math.min(255, Math.max(0, laplacian))
-            dst[idx] = val
-            dst[idx + 1] = val
-            dst[idx + 2] = val
-          }
-        }
-        ctx.putImageData(sharpened, 0, 0)
+
+        // 第三步：轻微去噪（移除孤立的椒盐噪声点）
+        this.removeNoise(ctx, canvas.width, canvas.height)
 
         const compressedData = canvas.toDataURL('image/jpeg', this.compressOptions.quality)
 
         const duration = Date.now() - startTime
         const compressionRatio = Math.round((1 - compressedData.length / imageData.length) * 100)
-        console.log(`✅ 图像压缩与预处理完成: ${duration}ms, ${img.width}x${img.height}→${Math.floor(width)}x${Math.floor(height)}, 压缩${compressionRatio}%`)
 
         resolve(compressedData)
       }
 
       img.onerror = (error) => {
-        console.error('❌ 图像加载失败:', error)
         reject(error)
       }
     })
   }
 
-  // 执行OCR文字识别
-  private async performOCR(imageData: string): Promise<string> {
-    const startTime = Date.now()
+  // Otsu自动阈值二值化
+  private computeOtsuThreshold(grayData: Uint8ClampedArray, width: number, height: number): number {
+    const histogram = new Uint32Array(256)
+    for (let i = 0; i < grayData.length; i++) {
+      histogram[grayData[i]]++
+    }
 
+    const total = grayData.length
+    let sum = 0
+    for (let i = 0; i < 256; i++) sum += i * histogram[i]
+
+    let sumB = 0
+    let wB = 0
+    let maxVariance = 0
+    let threshold = 128
+
+    for (let t = 0; t < 256; t++) {
+      wB += histogram[t]
+      if (wB === 0) continue
+      const wF = total - wB
+      if (wF === 0) break
+
+      sumB += t * histogram[t]
+      const mB = sumB / wB
+      const mF = (sum - sumB) / wF
+      const variance = wB * wF * (mB - mF) * (mB - mF)
+
+      if (variance > maxVariance) {
+        maxVariance = variance
+        threshold = t
+      }
+    }
+
+    return threshold
+  }
+
+  // 椒盐噪声去除（仅移除孤立的噪点，保留文字结构）
+  private removeNoise(ctx: CanvasRenderingContext2D, width: number, height: number): void {
+    const imgData = ctx.getImageData(0, 0, width, height)
+    const data = imgData.data
+    const binary = new Uint8Array(width * height)
+
+    // 二值化数据
+    for (let i = 0; i < binary.length; i++) {
+      binary[i] = data[i * 4] > 128 ? 1 : 0
+    }
+
+    // 统计每个白点周围8邻域的白点数量
+    const clean = new Uint8Array(binary.length)
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = y * width + x
+        if (binary[idx] === 0) continue
+
+        let neighbors = 0
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue
+            neighbors += binary[(y + dy) * width + (x + dx)]
+          }
+        }
+
+        // 8邻域中有>=3个白点则保留，否则认为是噪声
+        clean[idx] = neighbors >= 3 ? 1 : 0
+      }
+    }
+
+    // 写回
+    for (let i = 0; i < clean.length; i++) {
+      const val = clean[i] ? 255 : 0
+      data[i * 4] = val
+      data[i * 4 + 1] = val
+      data[i * 4 + 2] = val
+    }
+
+    ctx.putImageData(imgData, 0, 0)
+  }
+
+  // 评分OCR文本：综合行数 + 可见字符数 + 平均置信度
+  private scoreOcrText(text: string, confidence: number): number {
+    if (!text) return 0
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0)
+    const visibleChars = text.replace(/\s+/g, '').length
+    // 置信度权重 × 文本丰富度，行数和字符数也有加成
+    const confidenceBonus = confidence * 100
+    return lines.length * 10 + visibleChars + confidenceBonus
+  }
+
+  // 执行OCR文字识别 - 尝试多种 PSM 模式以提升多行中英文识别率
+  private async performOCR(imageData: string): Promise<string> {
     if (!this.workerInitialized) {
-      console.log('⚡ Worker未就绪，尝试初始化...')
       await this.initializeWorker()
     }
 
     if (!this.worker) {
-      console.warn('⚠️ Tesseract Worker不可用')
       return ''
     }
 
-    try {
-      console.log('🔤 开始OCR识别...')
+    // PSM模式说明：
+    // 3: 全页自动检测（适合多区域混合布局）
+    // 4: 单列竖排文本（适合商品标签整块文字）
+    // 6: 统一文本块（适合背景清晰的多行文字）
+    // 7: 单行文本（适合单行型号/条码）
+    // 11: 稀疏文本（适合背景复杂的情况）
+    // 13: 原始文本行（不做分行处理）
+    const psmModes = ['6', '3', '4', '7', '11', '13']
+    let bestText = ''
+    let bestScore = -1
 
-      const ret = await this.worker.recognize(imageData)
-
-      const text = ret.data.text.trim()
-      console.log(`✅ OCR完成: ${Date.now() - startTime}ms, ${text.length}字符, 置信度: ${ret.data.confidence.toFixed(1)}%`)
-
-      if (text.length > 0) {
-        console.log('📝 识别内容:')
-        console.log('```')
-        console.log(text)
-        console.log('```')
+    for (const psm of psmModes) {
+      try {
+        await this.worker.setParameters({ 'tessedit_pageseg_mode': psm })
+        const ret = await this.worker.recognize(imageData)
+        const text = (ret?.data?.text || '').trim()
+        const conf = ret?.data?.confidence ? ret.data.confidence / 100 : 0.5
+        const score = this.scoreOcrText(text, conf)
+        if (score > bestScore) {
+          bestScore = score
+          bestText = text
+        }
+      } catch (_) {
+        // 单个 PSM 失败忽略，继续尝试其他模式
       }
-
-      return text
-    } catch (error) {
-      console.error('❌ OCR识别失败:', error)
-      console.error('❌ 错误详情:', JSON.stringify(error))
-      return ''
     }
+
+    // 还原默认 PSM 配置
+    try {
+      await this.worker.setParameters({ 'tessedit_pageseg_mode': '6' })
+    } catch (_) {}
+
+    return bestText
   }
 
   async recognize(imageData: string): Promise<{
@@ -247,26 +290,15 @@ export class ImageRecognizer {
     }
   }> {
     const totalStartTime = Date.now()
-    console.log('========================================')
-    console.log('🚀 开始OCR识别流程')
-    console.log('========================================')
 
     try {
-      console.log('📋 1/3: 图像压缩')
       const compressedData = await this.compressImage(imageData)
 
-      console.log('📋 2/3: OCR识别')
       const ocrResult = await this.performOCR(compressedData)
 
-      console.log('📋 3/3: 解析结果')
       const result = this.parseOCRResult(ocrResult)
 
       const totalTime = Date.now() - totalStartTime
-      console.log('========================================')
-      console.log(`✅ 识别完成: ${totalTime}ms`)
-      console.log(`   - 型号: ${result.modelName}`)
-      console.log(`   - 厂家: ${result.manufacturer}`)
-      console.log('========================================')
 
       return {
         result,
@@ -277,68 +309,57 @@ export class ImageRecognizer {
       }
     } catch (error) {
       const totalTime = Date.now() - totalStartTime
-      console.error('========================================')
-      console.error(`❌ 识别失败: ${totalTime}ms`)
-      console.error('  错误:', error)
-      console.error('========================================')
       throw new Error('OCR识别失败: ' + (error as Error).message)
     }
   }
 
   private parseOCRResult(ocrText: string): RecognitionResult {
-    console.log('🔍 parseOCRResult 输入的 ocrText:', ocrText)
-    console.log('🔍 parseOCRResult 输入的类型:', typeof ocrText)
-    console.log('🔍 parseOCRResult 输入长度:', ocrText.length)
-
     let modelName = '未识别'
     let manufacturer = '未识别'
 
     if (!ocrText) {
-      console.log('📭 无OCR文本')
       return { modelName, manufacturer, confidence: 0, ocrText: '' }
     }
 
-    const lines = ocrText.split(/\r?\n/).filter(line => line.trim().length > 0)
-    console.log('📄 识别到的行:', lines)
+    // 后处理：常见OCR误识字符纠正
+    const normalizedText = this.normalizeOcrText(ocrText)
+
+    const lines = normalizedText.split(/\r?\n/).filter(line => line.trim().length > 0)
 
     // 清理文本 - 去除多余空格
     const cleanedLines = lines.map(line => line.replace(/\s+/g, ' ').trim())
 
     // 尝试合并相邻行，提高多行识别率
     const mergedTexts: string[] = []
-    // 添加原始行
     mergedTexts.push(...cleanedLines)
-    // 添加合并相邻行的结果
     for (let i = 0; i < cleanedLines.length - 1; i++) {
       mergedTexts.push(cleanedLines[i] + ' ' + cleanedLines[i + 1])
     }
-    // 添加所有行合并的结果
     mergedTexts.push(cleanedLines.join(' '))
 
     const sortedLines = [...new Set(mergedTexts)].sort((a, b) => b.length - a.length)
-    console.log('🔗 扩展后的文本候选项:', sortedLines.slice(0, 10))
 
     const manufacturerKeywords = [
-      { name: '科思特', keywords: ['科思特', 'ke si te', 'kest'] },
-      { name: '联想', keywords: ['联想', 'lenovo', 'thinkpad'] },
-      { name: '华为', keywords: ['华为', 'huawei'] },
-      { name: '小米', keywords: ['小米', 'xiaomi'] },
-      { name: '苹果', keywords: ['苹果', 'apple'] },
-      { name: '三星', keywords: ['三星', 'samsung'] },
-      { name: '戴尔', keywords: ['戴尔', 'dell'] },
-      { name: '惠普', keywords: ['惠普', 'hp'] },
-      { name: '得力', keywords: ['得力', 'deli'] }
+      { name: '科思特', keywords: ['科思特', 'ke si te', 'kest', '科思', '科斯特'] },
+      { name: '联想', keywords: ['联想', 'lenovo', 'thinkpad', 'ThinkPad'] },
+      { name: '华为', keywords: ['华为', 'huawei', 'HUAWEI'] },
+      { name: '小米', keywords: ['小米', 'xiaomi', 'XIAOMI', '红米'] },
+      { name: '苹果', keywords: ['苹果', 'apple', 'APPLE'] },
+      { name: '三星', keywords: ['三星', 'samsung', 'SAMSUNG'] },
+      { name: '戴尔', keywords: ['戴尔', 'dell', 'DELL'] },
+      { name: '惠普', keywords: ['惠普', 'hp', 'HP', ' Hewlett'] },
+      { name: '得力', keywords: ['得力', 'deli', 'DELI'] },
+      { name: '爱普生', keywords: ['爱普生', 'epson', 'EPSON'] },
+      { name: '罗技', keywords: ['罗技', 'logitech', 'LOGITECH'] },
+      { name: '微软', keywords: ['微软', 'microsoft', 'MICROSOFT'] },
     ]
 
-    // 1. 查找厂家
+    // 1. 查找厂家（从长到短匹配，优先完整匹配）
     for (const text of sortedLines) {
       for (const manu of manufacturerKeywords) {
         for (const keyword of manu.keywords) {
-          const lowerText = text.toLowerCase()
-          const lowerKeyword = keyword.toLowerCase()
-          if (lowerText.includes(lowerKeyword)) {
+          if (text.includes(keyword)) {
             manufacturer = manu.name
-            console.log(`🏭 匹配到厂家: ${manufacturer} (关键词: ${keyword})`)
             break
           }
         }
@@ -347,24 +368,23 @@ export class ImageRecognizer {
       if (manufacturer !== '未识别') break
     }
 
-    // 2. 查找型号 - 匹配字母+数字格式
+    // 2. 查找型号 - 匹配字母+数字格式（优先长匹配）
     const modelPatterns = [
-      /[A-Za-z]{1,4}\s*[-_]?\s*\d{3,6}/i,  // K CRG319, CRG-319, CRG319
-      /\d{3,6}\s*[-_]?\s*[A-Za-z]{1,4}/i,  // 319 CRG
-      /[A-Za-z]{2,4}\d{2,4}/i,                  // CRG319
+      /[A-Za-z]{1,5}[-_]?\d{2,6}/i,         // CRG-319, K-520, CRG319
+      /\d{2,6}[-_]?[A-Za-z]{1,5}/i,         // 319 CRG, 520K
+      /[A-Za-z]{2,6}\d{2,6}/i,              // CRG9528, M1450
       /[A-Za-z]{1,3}\s*[A-Za-z0-9]{3,8}/i,  // 更广泛的型号格式
-      /[A-Za-z0-9]{3,10}/i                   // 任意字母数字组合
+      /[A-Za-z0-9]{4,12}/i                   // 任意字母数字组合
     ]
 
     for (const text of sortedLines) {
       for (const pattern of modelPatterns) {
         const match = text.match(pattern)
         if (match) {
-          const candidate = match[0].trim()
+          const candidate = match[0].trim().replace(/\s+/g, '')
           // 过滤掉太短的纯数字或纯字母
-          if (candidate.length >= 3 && !/^\d+$/.test(candidate)) {
-            modelName = candidate
-            console.log(`🔢 匹配到型号: ${modelName}`)
+          if (candidate.length >= 3 && !/^\d+$/.test(candidate) && !/^[A-Za-z]+$/.test(candidate)) {
+            modelName = candidate.toUpperCase()
             break
           }
         }
@@ -372,16 +392,32 @@ export class ImageRecognizer {
       if (modelName !== '未识别') break
     }
 
-    // 3. 如果没有匹配到型号，使用最长的行，但优先选择有字母和数字混合的
+    // 3. 如果没有匹配到型号，尝试从包含厂家的行中提取
+    if (modelName === '未识别' && manufacturer !== '未识别') {
+      const manuLine = sortedLines.find(line =>
+        manufacturerKeywords.find(m => m.name === manufacturer)?.keywords.some(
+          k => line.includes(k)
+        )
+      )
+      if (manuLine) {
+        // 在厂家所在行中查找数字和字母混合的片段
+        const parts = manuLine.split(/\s+/).filter(p => p.length >= 3)
+        const modelPart = parts.find(p =>
+          /[A-Za-z]/.test(p) && /[0-9]/.test(p) && p.length >= 4
+        )
+        if (modelPart) {
+          modelName = modelPart.toUpperCase()
+        }
+      }
+    }
+
+    // 4. 如果还是没有，使用最长的混合行
     if (modelName === '未识别' && sortedLines.length > 0) {
-      // 尝试找一个混合了字母和数字的行
       const mixedLine = sortedLines.find(line => /[A-Za-z]/.test(line) && /[0-9]/.test(line))
       if (mixedLine) {
-        modelName = mixedLine.trim()
-        console.log(`📝 使用混合字母数字的行作为型号: ${modelName}`)
+        modelName = mixedLine.trim().toUpperCase()
       } else {
-        modelName = sortedLines[0].trim()
-        console.log(`📝 使用最长行作为型号: ${modelName}`)
+        modelName = sortedLines[0].trim().toUpperCase()
       }
     }
 
@@ -392,17 +428,47 @@ export class ImageRecognizer {
     if (lines.length >= 2) confidence += 0.1
     confidence = Math.min(confidence, 0.95)
 
-    console.log('📦 parseOCRResult返回结果:', { modelName, manufacturer, confidence, ocrText })
-    return { modelName, manufacturer, confidence, ocrText }
+    return { modelName, manufacturer, confidence, ocrText: normalizedText }
+  }
+
+  // OCR文本后处理：纠正常见误识
+  private normalizeOcrText(text: string): string {
+    if (!text) return text
+
+    const replacements: [RegExp, string][] = [
+      // 中文/英文标点混淆
+      [/[，,]{2,}/g, ','],          // 多余逗号
+      [/[,;]/g, ''],                // 孤立无意义符号
+      [/[。.]+$/g, ''],              // 尾部句号
+      // 常见OCR数字误识（0和O、1和l、8和B）
+      [/(?<=[A-Za-z])0(?=[A-Za-z])/g, 'O'],  // 字母间0→O
+      [/(?<=\d)O(?=\d)/g, '0'],     // 数字间O→0
+      [/(?<=[A-Za-z])1(?=[A-Za-z])/g, 'l'], // 字母间1→l
+      [/(?<=\d)l(?=\d)/g, '1'],     // 数字间l→1
+      [/(?<=[A-Za-z])8(?=[A-Za-z])/g, 'B'], // 字母间8→B
+      [/(?<=[A-Za-z])B(?=[A-Za-z0-9])/g, '8'], // 字母间B→8（保守）
+      // 常见中文字符误识
+      [/一/g, '-'],                 // 数字1误识为横线
+      [/—/g, '-'],                  // 长破折号统一
+      [/\s*-\s*/g, '-'],            // 破折号周围空格
+    ]
+
+    let result = text
+    for (const [pattern, replacement] of replacements) {
+      result = result.replace(pattern, replacement)
+    }
+
+    // 去除行首行尾多余空白
+    result = result.split(/\r?\n/).map(l => l.trim()).join('\n')
+
+    return result
   }
 
   async dispose(): Promise<void> {
     if (this.worker) {
       try {
         await this.worker.terminate()
-        console.log('🧹 Tesseract Worker已终止')
       } catch (error) {
-        console.error('❌ Worker终止失败:', error)
       }
       this.worker = null
     }
@@ -417,7 +483,6 @@ let globalInitialized = false
 
 export function getImageRecognizer(): ImageRecognizer {
   if (!globalRecognizer) {
-    console.log('🎯 创建全局ImageRecognizer单例')
     globalRecognizer = new ImageRecognizer()
   }
   return globalRecognizer
@@ -425,12 +490,10 @@ export function getImageRecognizer(): ImageRecognizer {
 
 export async function initializeImageRecognizer(): Promise<boolean> {
   if (globalInitialized) {
-    console.log('✅ 全局识别器已就绪')
     return true
   }
 
   if (globalInitializing) {
-    console.log('⏳ 全局识别器正在初始化中...')
     await new Promise(resolve => {
       const checkInterval = setInterval(() => {
         if (globalInitialized || !globalInitializing) {
@@ -443,16 +506,13 @@ export async function initializeImageRecognizer(): Promise<boolean> {
   }
 
   globalInitializing = true
-  console.log('🚀 开始初始化全局识别器...')
 
   try {
     const recognizer = getImageRecognizer()
     const success = await recognizer.initialize()
     globalInitialized = success
-    console.log(`🎯 全局识别器初始化: ${success ? '✅成功' : '❌失败'}`)
     return success
   } catch (error) {
-    console.error('❌ 全局识别器初始化异常:', error)
     return false
   } finally {
     globalInitializing = false
@@ -474,7 +534,6 @@ export async function recognizeImage(imageData: string): Promise<{
   }
 
   const result = await recognizer.recognize(imageData)
-  console.log(`📊 总耗时: ${Date.now() - startTime}ms`)
   return result
 }
 
@@ -485,5 +544,4 @@ export async function disposeImageRecognizer(): Promise<void> {
   }
   globalInitialized = false
   globalInitializing = false
-  console.log('🧹 全局识别器已清理')
 }

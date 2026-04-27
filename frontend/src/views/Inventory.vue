@@ -133,11 +133,12 @@
         :rules="adjustRules"
         label-width="100px"
       >
-        <el-form-item label="商品" prop="productId" v-if="!adjustForm.id">
+        <el-form-item label="商品" prop="productId">
           <el-select
             v-model="adjustForm.productId"
             placeholder="请选择商品"
             style="width: 100%"
+            :disabled="!!adjustForm.id"
           >
             <el-option
               v-for="product in productOptions"
@@ -152,6 +153,7 @@
             v-model="adjustForm.warehouseId"
             placeholder="请选择仓库"
             style="width: 100%"
+            :disabled="!!adjustForm.id"
           >
             <el-option
               v-for="warehouse in warehouses"
@@ -161,19 +163,29 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="adjustForm.currentStock !== undefined" label="当前库存">
+          <span class="current-stock-hint">
+            {{ adjustForm.currentStock }} 件
+            <el-tag v-if="adjustForm.currentStock === 0" type="danger" size="small" style="margin-left:6px">库存为零</el-tag>
+          </span>
+        </el-form-item>
+        <el-form-item label="调整类型" prop="adjustType">
+          <el-radio-group v-model="adjustForm.adjustType">
+            <el-radio value="in">入库</el-radio>
+            <el-radio value="out">出库</el-radio>
+          </el-radio-group>
+        </el-form-item>
         <el-form-item label="调整数量" prop="quantity">
           <el-input-number
             v-model="adjustForm.quantity"
             :min="1"
+            :max="adjustForm.adjustType === 'out' && adjustForm.currentStock !== undefined ? adjustForm.currentStock : Infinity"
             style="width: 100%"
             placeholder="请输入调整数量"
           />
-        </el-form-item>
-        <el-form-item label="调整类型" prop="adjustType">
-          <el-radio-group v-model="adjustForm.adjustType">
-            <el-radio label="in">入库</el-radio>
-            <el-radio label="out">出库</el-radio>
-          </el-radio-group>
+          <div v-if="adjustForm.adjustType === 'out' && adjustForm.currentStock !== undefined" class="stock-tip">
+            最多可出库 {{ adjustForm.currentStock }} 件
+          </div>
         </el-form-item>
         <el-form-item label="调整原因" prop="remark">
           <el-input
@@ -196,7 +208,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, watch, onMounted } from 'vue';
 import {
   Search,
   Refresh,
@@ -233,15 +245,34 @@ const adjustForm = reactive({
   id: '',
   productId: '',
   warehouseId: '',
-  quantity: 0,
+  quantity: 1,
   adjustType: 'in',
   remark: '',
+  currentStock: undefined as number | undefined,
 });
 
 const adjustRules = reactive<FormRules>({
   productId: [{ required: true, message: '请选择商品', trigger: 'change' }],
   warehouseId: [{ required: true, message: '请选择仓库', trigger: 'change' }],
-  quantity: [{ required: true, message: '请输入调整数量', trigger: 'blur' }],
+  quantity: [
+    { required: true, message: '请输入调整数量', trigger: 'blur' },
+    {
+      validator: (_rule: any, value: number, callback: (e?: Error) => void) => {
+        if (adjustForm.adjustType === 'out' && adjustForm.currentStock !== undefined) {
+          if (value > adjustForm.currentStock) {
+            callback(new Error(`出库数量不能超过当前库存 ${adjustForm.currentStock} 件`));
+            return;
+          }
+          if (adjustForm.currentStock === 0) {
+            callback(new Error('当前库存为零，无法出库'));
+            return;
+          }
+        }
+        callback();
+      },
+      trigger: 'change',
+    },
+  ],
   adjustType: [{ required: true, message: '请选择调整类型', trigger: 'change' }],
   remark: [{ required: true, message: '请输入调整原因', trigger: 'blur' }],
 });
@@ -321,18 +352,20 @@ const handleAdjust = (row?: any) => {
       id: row.id,
       productId: row.productId,
       warehouseId: row.warehouseId,
-      quantity: 0,
+      quantity: 1,
       adjustType: 'in',
       remark: '',
+      currentStock: row.quantity,
     });
   } else {
     Object.assign(adjustForm, {
       id: '',
       productId: '',
       warehouseId: '',
-      quantity: 0,
+      quantity: 1,
       adjustType: 'in',
       remark: '',
+      currentStock: undefined,
     });
   }
 };
@@ -344,23 +377,15 @@ const handleAdjustSubmit = async () => {
     await adjustFormRef.value.validate();
     adjustLoading.value = true;
 
-    if (adjustForm.id) {
-      // 更新库存调整记录（通过ID）
-      await inventoryApi.adjust(adjustForm.id, {
-        quantity: adjustForm.adjustType === 'in' ? adjustForm.quantity : -adjustForm.quantity,
-        remark: adjustForm.remark,
-      });
-      ElMessage.success('调整成功');
-    } else {
-      // 创建库存调整记录（通过产品和仓库）
-      await inventoryApi.adjustByProductWarehouse({
-        product: adjustForm.productId,
-        warehouse: adjustForm.warehouseId,
-        quantity: adjustForm.adjustType === 'in' ? adjustForm.quantity : -adjustForm.quantity,
-        remark: adjustForm.remark,
-      });
-      ElMessage.success('调整成功');
-    }
+    // 始终通过商品+仓库进行调整，确保用户切换仓库后操作的是目标仓库的库存，
+    // 而不是最初选中行的库存（同时支持新增仓库库存记录）。
+    await inventoryApi.adjustByProductWarehouse({
+      product: adjustForm.productId,
+      warehouse: adjustForm.warehouseId,
+      quantity: adjustForm.adjustType === 'in' ? adjustForm.quantity : -adjustForm.quantity,
+      remark: adjustForm.remark,
+    });
+    ElMessage.success('调整成功');
 
     adjustDialogVisible.value = false;
     loadInventory();
@@ -370,6 +395,10 @@ const handleAdjustSubmit = async () => {
     adjustLoading.value = false;
   }
 };
+
+watch(() => adjustForm.adjustType, () => {
+  adjustFormRef.value?.validateField('quantity');
+});
 
 onMounted(() => {
   loadOptions();
@@ -396,5 +425,17 @@ onMounted(() => {
 .pagination-container {
   margin-top: 20px;
   text-align: right;
+}
+
+.current-stock-hint {
+  font-size: 14px;
+  color: #303133;
+  font-weight: 600;
+}
+
+.stock-tip {
+  font-size: 12px;
+  color: #f56c6c;
+  margin-top: 4px;
 }
 </style>

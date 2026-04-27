@@ -409,7 +409,9 @@ import {
 } from '@element-plus/icons-vue';
 import type { FormInstance, FormRules } from 'element-plus';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { apiClient } from '@/stores';
+import { productsApi } from '@/api/products';
+import { categoriesApi } from '@/api/categories';
+import { suppliersApi } from '@/api/suppliers';
 import ExcelImportComponent from '@/components/ExcelImportComponent.vue';
 import ImageRecognitionComponent from '@/components/ImageRecognitionComponent.vue';
 import ExcelJS from 'exceljs';
@@ -481,7 +483,7 @@ const loadProducts = async () => {
       ...searchForm,
     };
 
-    const response = await apiClient.get('/api/products', { params });
+    const response = await productsApi.getList(params);
     tableData.value = response.data.products;
     pagination.total = response.data.pagination.total;
   } catch (error) {
@@ -496,8 +498,8 @@ const loadProducts = async () => {
 const loadOptions = async () => {
   try {
     const [categoriesRes, suppliersRes] = await Promise.all([
-      apiClient.get('/api/categories/options'),
-      apiClient.get('/api/suppliers/options'),
+      categoriesApi.getOptions(),
+      suppliersApi.getOptions(),
     ]);
 
     categories.value = categoriesRes.data.categories;
@@ -666,7 +668,7 @@ const handleDelete = async (row: any) => {
       }
     );
 
-    await apiClient.delete(`/api/products/${row.id}`);
+    await productsApi.delete(row.id);
     ElMessage.success('删除成功');
     loadProducts();
   } catch (error: any) {
@@ -685,10 +687,10 @@ const handleSubmit = async () => {
     submitLoading.value = true;
 
     if (isEdit.value) {
-      await apiClient.put(`/api/products/${form.id}`, form);
+      await productsApi.update(form.id, form);
       ElMessage.success('更新成功');
     } else {
-      await apiClient.post('/api/products', form);
+      await productsApi.create(form);
       ElMessage.success('创建成功');
     }
 

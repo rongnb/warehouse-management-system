@@ -52,6 +52,18 @@ export const productsApi = {
       method: 'get',
     })
   },
+
+  // 导入商品（Excel）
+  importProducts: (formData: FormData) => {
+    return request({
+      url: '/products/import',
+      method: 'post',
+      data: formData,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+  },
 }
 
 export default productsApi

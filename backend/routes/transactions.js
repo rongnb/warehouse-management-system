@@ -90,18 +90,18 @@ router.get('/', auth, asyncHandler(async (req, res) => {
   const formattedTransactions = transactions.map(t => {
     const tObj = t.toJSON();
     return {
-      id: tObj._id,
-      _id: tObj._id,
+      id: tObj.id,
+      _id: tObj.id,
       transactionNo: tObj.transactionNo,
       productName: tObj.product?.name || '',
       sku: tObj.product?.sku || '',
-      productId: tObj.product?._id,
+      productId: tObj.product?.id,
       type: tObj.type,
       quantity: tObj.quantity,
       unitPrice: tObj.price || 0,
       totalAmount: (tObj.price || 0) * tObj.quantity,
       warehouseName: tObj.warehouse?.name || '',
-      warehouseId: tObj.warehouse?._id,
+      warehouseId: tObj.warehouse?.id,
       status: tObj.status,
       createdBy: tObj.operatorUser?.realName || '',
       createdAt: tObj.createdAt,
@@ -181,7 +181,7 @@ router.get('/export', auth, asyncHandler(async (req, res) => {
   const formatted = transactions.map(t => {
     const tObj = t.toJSON();
     return {
-      id: tObj._id,
+      id: tObj.id,
       transactionNo: tObj.transactionNo,
       type: tObj.type,
       productName: tObj.product?.name || '未知商品',
@@ -222,7 +222,7 @@ router.get('/recent/list', auth, asyncHandler(async (req, res) => {
   const formatted = transactions.map(t => {
     const tObj = t.toJSON();
     return {
-      id: tObj._id,
+      id: tObj.id,
       transactionNo: tObj.transactionNo,
       productName: tObj.product?.name || '未知商品',
       type: tObj.type,
@@ -566,7 +566,7 @@ router.put('/:id/cancel', auth, requireRole(['admin', 'manager']), asyncHandler(
 router.post('/:id/cancel', auth, requireRole(['admin', 'manager']), asyncHandler(handleCancel));
 
 // 更新交易记录
-router.put('/:id', auth, asyncHandler(async (req, res) => {
+router.put('/:id', auth, requireRole(['admin', 'manager']), asyncHandler(async (req, res) => {
   const { id } = req.params;
   const {
     productId,

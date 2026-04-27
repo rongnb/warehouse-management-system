@@ -54,7 +54,6 @@ router.get('/', auth, asyncHandler(async (req, res) => {
 
   const formattedWarehouses = warehouses.map(warehouse => {
     const w = warehouse.toJSON();
-    w.id = w._id;
     w.manager = w.managerUser || '';
     return w;
   });
@@ -124,7 +123,6 @@ router.get('/:id', auth, asyncHandler(async (req, res) => {
   });
 
   const formattedWarehouse = warehouse.toJSON();
-  formattedWarehouse.id = formattedWarehouse._id;
 
   res.json({
     warehouse: formattedWarehouse,

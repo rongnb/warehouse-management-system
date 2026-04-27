@@ -136,7 +136,6 @@ router.get('/', auth, asyncHandler(async (req, res) => {
 
   const formattedProducts = products.map(p => {
     const productObj = p.toJSON();
-    productObj.id = productObj._id;
     productObj.categoryName = productObj.category?.name || '';
     productObj.supplierName = productObj.supplier?.name || '';
     productObj.createdByName = productObj.createdByUser?.realName || '';
@@ -168,7 +167,6 @@ router.get('/:id', auth, asyncHandler(async (req, res) => {
   }
 
   const productObj = product.toJSON();
-  productObj.id = productObj._id;
 
   const inventory = await Inventory.findAll({
     where: { productId: productObj.id },

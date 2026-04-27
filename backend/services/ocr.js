@@ -50,8 +50,9 @@ async function initializeWorker() {
 
     const worker = await Tesseract.createWorker('chi_sim+eng', 1, workerOptions);
 
+    // 默认使用 PSM 6（统一文本块），更适合商品表面拍照的多行文字
     await worker.setParameters({
-      'tessedit_pageseg_mode': '3',
+      'tessedit_pageseg_mode': '6',
       'tessedit_ocr_engine_mode': '1',
       'preserve_interword_spaces': '1',
     });
@@ -69,6 +70,43 @@ async function initializeWorker() {
   } finally {
     workerInitializing = false;
   }
+}
+
+// 评分：行数越多、可见字符越多，得分越高
+function scoreOcrText(text) {
+  if (!text) return 0;
+  const lines = text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  const visibleChars = text.replace(/\s+/g, '').length;
+  return lines.length * 10 + visibleChars;
+}
+
+// 使用多种 PSM 模式识别，返回得分最高的文本，提升多行中英文识别成功率
+async function recognizeWithMultiplePSM(worker, imagePath) {
+  const psmModes = ['6', '4', '3', '11'];
+  let best = { text: '', score: -1, psm: '6' };
+
+  for (const psm of psmModes) {
+    try {
+      await worker.setParameters({ 'tessedit_pageseg_mode': psm });
+      const result = await worker.recognize(imagePath);
+      const text = (result && result.data && result.data.text) || '';
+      const score = scoreOcrText(text);
+      logger.info(`📊 PSM ${psm} 识别得分: ${score}`);
+      if (score > best.score) {
+        best = { text, score, psm };
+      }
+    } catch (err) {
+      logger.warn(`⚠️ PSM ${psm} 识别失败: ${err.message}`);
+    }
+  }
+
+  // 还原默认 PSM 配置
+  try {
+    await worker.setParameters({ 'tessedit_pageseg_mode': '6' });
+  } catch (_) {}
+
+  logger.info(`🏆 选用 PSM ${best.psm} 的识别结果`);
+  return best.text;
 }
 
 function parseOCRResult(ocrText) {
@@ -171,4 +209,5 @@ function parseOCRResult(ocrText) {
 module.exports = {
   parseOCRResult,
   initializeWorker,
+  recognizeWithMultiplePSM,
 };

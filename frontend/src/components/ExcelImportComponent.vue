@@ -103,7 +103,8 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { Upload, Download } from '@element-plus/icons-vue';
 import ExcelJS from 'exceljs';
 import type { UploadInstance } from 'element-plus';
-import { apiClient } from '@/stores';
+import { warehousesApi } from '@/api/warehouses';
+import { productsApi } from '@/api/products';
 
 interface Props {
   visible: boolean;
@@ -147,7 +148,7 @@ const warehouses = ref<any[]>([]);
 // 加载仓库列表
 const loadWarehouses = async () => {
   try {
-    const response = await apiClient.get('/api/warehouses/options');
+    const response = await warehousesApi.getOptions();
     warehouses.value = response.data.warehouses;
   } catch (error) {
     console.error('加载仓库列表失败:', error);
@@ -332,11 +333,7 @@ const handleImport = async () => {
     }, 500);
 
     // 发送请求
-    const response = await apiClient.post('/api/products/import', formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    });
+    const response = await productsApi.importProducts(formData);
 
     clearInterval(progressInterval);
     progress.value = 100;
@@ -359,7 +356,6 @@ const handleImport = async () => {
       await ElMessageBox.alert(errorText, '导入结果', {
         confirmButtonText: '确定',
         type: 'warning',
-        dangerouslyUseHTMLString: true,
       });
     } else {
       ElMessage.success(`导入成功！共导入 ${successCount} 条数据`);

@@ -57,7 +57,7 @@ router.get('/', auth, asyncHandler(async (req, res) => {
 router.get('/:id', auth, asyncHandler(async (req, res) => {
   const stocktake = await Stocktake.findByPk(req.params.id, {
     include: [
-      { model: Warehouse, as: 'warehouse', attributes: ['name', 'address'], required: false },
+      { model: Warehouse, as: 'warehouse', attributes: ['name', 'location'], required: false },
       { model: User, as: 'creator', attributes: ['realName', 'username'], required: false },
       { model: User, as: 'firstConfirmer', attributes: ['realName', 'username'], required: false },
       { model: User, as: 'secondConfirmer', attributes: ['realName', 'username'], required: false },
@@ -65,7 +65,7 @@ router.get('/:id', auth, asyncHandler(async (req, res) => {
         model: StocktakeItem,
         as: 'items',
         include: [
-          { model: Product, as: 'product', attributes: ['name', 'sku', 'spec', 'unit', 'price'], required: false },
+          { model: Product, as: 'product', attributes: ['name', 'sku', 'specification', 'unit', 'price'], required: false },
         ],
       },
     ],
@@ -96,7 +96,7 @@ router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), as
     const inventories = await Inventory.findAll({
       where: { warehouseId: warehouse },
       include: [
-        { model: Product, as: 'product', attributes: ['name', 'sku', 'spec', 'unit', 'price'], required: false },
+        { model: Product, as: 'product', attributes: ['name', 'sku', 'specification', 'unit', 'price'], required: false },
       ],
       transaction: t,
     });
@@ -120,7 +120,7 @@ router.post('/', auth, requireRole(['admin', 'manager', 'warehouse_keeper']), as
         productId: inv.productId,
         sku: inv.product?.sku || '',
         productName: inv.product?.name || '',
-        spec: inv.product?.spec || '',
+        spec: inv.product?.specification || '',
         unit: inv.product?.unit || '',
         systemQuantity,
         actualQuantity: 0,
@@ -280,17 +280,13 @@ router.post('/:id/confirm', auth, asyncHandler(async (req, res) => {
       // Update inventory and create transactions for differences
       for (const item of stocktake.items) {
         if (item.difference !== 0) {
-          // Update inventory
-          await Inventory.increment(
-            { quantity: item.difference },
-            {
-              where: { productId: item.productId, warehouseId: stocktake.warehouseId },
-              transaction: t,
-            }
-          );
-
+          // Update inventory quantity and metadata in one call
           await Inventory.update(
-            { lastUpdated: new Date(), updatedBy: req.user.id },
+            {
+              quantity: sequelize.literal(`quantity + ${item.difference}`),
+              lastUpdated: new Date(),
+              updatedBy: req.user.id,
+            },
             {
               where: { productId: item.productId, warehouseId: stocktake.warehouseId },
               transaction: t,
@@ -358,7 +354,7 @@ router.get('/:id/export', auth, asyncHandler(async (req, res) => {
 
   const stocktake = await Stocktake.findByPk(id, {
     include: [
-      { model: Warehouse, as: 'warehouse', attributes: ['name', 'address'], required: false },
+      { model: Warehouse, as: 'warehouse', attributes: ['name', 'location'], required: false },
       { model: User, as: 'creator', attributes: ['realName', 'username'], required: false },
       { model: User, as: 'firstConfirmer', attributes: ['realName', 'username'], required: false },
       { model: User, as: 'secondConfirmer', attributes: ['realName', 'username'], required: false },

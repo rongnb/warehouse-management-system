@@ -23,20 +23,14 @@
           </el-select>
         </el-form-item>
         <el-form-item label="仓库">
-          <!-- 使用原生HTML select -->
-          <select
-            v-model="searchForm.warehouse"
-            style="width: 150px; height: 32px; padding: 0 15px; border: 1px solid #dcdfe6; border-radius: 4px; background-color: #fff; font-size: 14px; color: #606266; cursor: pointer;"
-          >
-            <option value="">请选择仓库</option>
-            <option
+          <el-select v-model="searchForm.warehouse" placeholder="请选择仓库" clearable style="width: 150px">
+            <el-option
               v-for="warehouse in warehouseList"
               :key="warehouse._id || warehouse.id"
+              :label="warehouse.name"
               :value="warehouse._id || warehouse.id"
-            >
-              {{ warehouse.name }}
-            </option>
-          </select>
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="创建时间">
           <el-date-picker
@@ -77,13 +71,13 @@
         <el-table-column prop="totalProfitQuantity" label="盘盈数量" width="100" align="right" />
         <el-table-column prop="totalProfitAmount" label="盘盈金额" width="120" align="right">
           <template #default="scope">
-            ¥{{ scope.row.totalProfitAmount.toFixed(2) }}
+            ¥{{ (scope.row.totalProfitAmount || 0).toFixed(2) }}
           </template>
         </el-table-column>
         <el-table-column prop="totalLossQuantity" label="盘亏数量" width="100" align="right" />
         <el-table-column prop="totalLossAmount" label="盘亏金额" width="120" align="right">
           <template #default="scope">
-            ¥{{ scope.row.totalLossAmount.toFixed(2) }}
+            ¥{{ (scope.row.totalLossAmount || 0).toFixed(2) }}
           </template>
         </el-table-column>
         <el-table-column prop="createdBy.realName" label="创建人" width="100" />
@@ -175,9 +169,6 @@
           >
             {{ form.warehouse ? getSelectedWarehouseName() : '点击选择仓库' }}
           </el-button>
-          <div style="font-size: 12px; color: #909399; margin-top: 5px;">
-            调试：仓库列表长度 = {{ warehouseList.length }}
-          </div>
         </div>
 
         <!-- 备注 -->
@@ -420,12 +411,8 @@ const selectedWarehouseId = ref('');
 
 // 测试仓库选择函数
 const testWarehouseSelect = () => {
-  console.log('点击按钮', 'warehouseList', warehouseList.value.length);
-  console.log('warehouseList内容:', warehouseList.value);
-  ElMessage.success('按钮被点击！仓库列表长度: ' + warehouseList.value.length);
   if (warehouseList.value.length === 0) {
     getWarehouseList().then(() => {
-      console.log('加载后长度:', warehouseList.value.length);
       showWarehouseSelector.value = true;
     });
   } else {
@@ -606,7 +593,7 @@ const handleSave = async () => {
         warehouse: form.warehouse,
         remark: form.remark,
       });
-      form._id = res.data.stocktake._id;
+      form._id = res.data.stocktake.id;
       form.items = res.data.stocktake.items;
       calculateTotal();
       ElMessage.success('创建成功');
@@ -644,7 +631,7 @@ const handleSubmit = async () => {
 
 // 核实
 const handleConfirm = (row: any) => {
-  confirmForm.id = row._id;
+  confirmForm.id = row.id;
   confirmForm.remark = '';
   confirmDialogVisible.value = true;
 };
@@ -666,7 +653,7 @@ const confirmSubmit = async () => {
 
 // 取消
 const handleCancel = (row: any) => {
-  cancelForm.id = row._id;
+  cancelForm.id = row.id;
   cancelForm.reason = '';
   cancelDialogVisible.value = true;
 };
@@ -701,7 +688,7 @@ const cancelSubmit = async () => {
 // 导出
 const handleExport = async (row: any) => {
   try {
-    const res = await stocktakeApi.export(row._id);
+    const res = await stocktakeApi.export(row.id);
     const data = res.data;
 
     // 构造Excel数据

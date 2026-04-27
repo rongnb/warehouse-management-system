@@ -162,7 +162,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, reactive } from 'vue';
+import { ref, onMounted, onBeforeUnmount, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import * as echarts from 'echarts';
@@ -173,7 +173,7 @@ import {
   Top,
   TrendCharts
 } from '@element-plus/icons-vue';
-import { apiClient } from '@/stores';
+import { dashboardApi } from '@/api/dashboard';
 
 const router = useRouter();
 const chartRef = ref<HTMLElement>();
@@ -194,20 +194,36 @@ const lowStockProducts = ref([]);
 const recentTransactions = ref([]);
 const recentOutboundProducts = ref<any[]>([]);
 const outboundLoading = ref(false);
+const trendData = ref<any[]>([]);
+const categoryStats = ref<any[]>([]);
+
+// Store chart instances and resize handlers for cleanup
+let chartInstance: any = null;
+let pieChartInstance: any = null;
+const handleChartResize = () => chartInstance?.resize();
+const handlePieChartResize = () => pieChartInstance?.resize();
 
 const loadDashboardData = async () => {
   try {
     // 获取统计数据
-    const statsRes = await apiClient.get('/api/dashboard/stats');
+    const statsRes = await dashboardApi.getStats();
     Object.assign(stats, statsRes.data);
-    
+
     // 获取低库存商品
-    const lowStockRes = await apiClient.get('/api/dashboard/low-stock');
+    const lowStockRes = await dashboardApi.getLowStock();
     lowStockProducts.value = lowStockRes.data.products;
-    
+
     // 获取最近交易
-    const transactionsRes = await apiClient.get('/api/dashboard/recent-transactions');
+    const transactionsRes = await dashboardApi.getRecentTransactions();
     recentTransactions.value = transactionsRes.data.transactions;
+
+    // 获取趋势数据和分类统计
+    const [trendRes, categoryRes] = await Promise.all([
+      dashboardApi.getTrendData(),
+      dashboardApi.getCategoryStats(),
+    ]);
+    trendData.value = trendRes.data.trend || [];
+    categoryStats.value = categoryRes.data.stats || [];
 
     // 获取商品最近出库记录
     await loadRecentOutbound();
@@ -223,8 +239,8 @@ const loadDashboardData = async () => {
 const initCharts = () => {
   // 出入库趋势图
   if (chartRef.value) {
-    const chart = echarts.init(chartRef.value);
-    chart.setOption({
+    chartInstance = echarts.init(chartRef.value);
+    chartInstance.setOption({
       tooltip: {
         trigger: 'axis',
       },
@@ -240,7 +256,7 @@ const initCharts = () => {
       xAxis: {
         type: 'category',
         boundaryGap: false,
-        data: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'],
+        data: trendData.value.map((d: any) => d.date),
       },
       yAxis: {
         type: 'value',
@@ -249,28 +265,29 @@ const initCharts = () => {
         {
           name: '入库',
           type: 'line',
-          stack: 'Total',
-          data: [120, 132, 101, 134, 90, 230, 210],
+          data: trendData.value.map((d: any) => d.in),
           itemStyle: { color: '#67c23a' },
         },
         {
           name: '出库',
           type: 'line',
-          stack: 'Total',
-          data: [220, 182, 191, 234, 290, 330, 310],
+          data: trendData.value.map((d: any) => d.out),
           itemStyle: { color: '#f56c6c' },
         },
       ],
     });
-    
-    // 响应式
-    window.addEventListener('resize', () => chart.resize());
+
+    window.addEventListener('resize', handleChartResize);
   }
-  
+
   // 分类占比饼图
   if (pieChartRef.value) {
-    const pieChart = echarts.init(pieChartRef.value);
-    pieChart.setOption({
+    pieChartInstance = echarts.init(pieChartRef.value);
+    const pieData = categoryStats.value.length > 0
+      ? categoryStats.value.map((s: any) => ({ value: s.count, name: s.name }))
+      : [{ value: 0, name: '暂无数据' }];
+
+    pieChartInstance.setOption({
       tooltip: {
         trigger: 'item',
       },
@@ -303,18 +320,12 @@ const initCharts = () => {
           labelLine: {
             show: false,
           },
-          data: [
-            { value: 1048, name: '电子产品' },
-            { value: 735, name: '办公用品' },
-            { value: 580, name: '五金工具' },
-            { value: 484, name: '生活用品' },
-            { value: 300, name: '其他' },
-          ],
+          data: pieData,
         },
       ],
     });
-    
-    window.addEventListener('resize', () => pieChart.resize());
+
+    window.addEventListener('resize', handlePieChartResize);
   }
 };
 
@@ -330,7 +341,7 @@ const goToTransactions = () => {
 const loadRecentOutbound = async () => {
   try {
     outboundLoading.value = true;
-    const res = await apiClient.get('/api/dashboard/recent-outbound');
+    const res = await dashboardApi.getRecentOutbound();
     recentOutboundProducts.value = res.data.products;
   } catch (error) {
     console.error('加载最近出库记录失败:', error);
@@ -347,6 +358,13 @@ const refreshRecentOutbound = () => {
 
 onMounted(() => {
   loadDashboardData();
+});
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', handleChartResize);
+  window.removeEventListener('resize', handlePieChartResize);
+  chartInstance?.dispose();
+  pieChartInstance?.dispose();
 });
 </script>
 

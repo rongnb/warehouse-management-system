@@ -191,7 +191,7 @@ router.put('/:id', auth, requireRole(['admin', 'manager']), asyncHandler(async (
     }
   }
 
-  if (parentId && parentId == req.params.id) {
+  if (parentId && String(parentId) === String(req.params.id)) {
     throw new BadRequestError('不能将自己设置为父分类');
   }
 

@@ -1,10 +1,5 @@
 <template>
   <div class="camera-wrapper">
-    <!-- 调试信息 -->
-    <div class="debug-bar">
-      <span>状态: {{ statusText }}</span>
-    </div>
-
     <!-- 主内容区 -->
     <div class="camera-main">
       <!-- 阶段1: 未启动 -->
@@ -45,11 +40,6 @@
 
       <!-- 阶段3: 预览照片 -->
       <div v-if="phase === 'preview'" class="preview-screen">
-        <!-- 调试信息 -->
-        <div class="debug-info" v-if="photoData">
-          <div>照片数据长度: {{ photoData.length }} 字符</div>
-        </div>
-
         <!-- 预览图片 -->
         <img :src="photoData" class="preview-img" alt="预览" />
 
@@ -71,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref } from 'vue';
 
 const videoRef = ref<HTMLVideoElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
@@ -89,13 +79,6 @@ const emit = defineEmits<{
   (e: 'cancel'): void;
 }>();
 
-const statusText = computed(() => {
-  if (phase.value === 'idle') return '等待启动';
-  if (phase.value === 'camera') return '摄像头已启动';
-  if (phase.value === 'preview') return '预览照片';
-  return '';
-});
-
 const canUseCamera = (): boolean => {
   // 始终返回 true，直接尝试启动
   // 如果浏览器不允许，getUserMedia 调用会失败，我们会在 catch 中提示用户
@@ -106,13 +89,8 @@ const startCamera = async () => {
   if (isStarting.value) return;
   isStarting.value = true;
 
-  console.log('=== 开始启动摄像头 ===');
-  console.log('协议:', window.location.protocol);
-  console.log('主机:', window.location.hostname);
-
   // 检查摄像头支持
   if (!canUseCamera()) {
-    console.warn('摄像头不被支持:', window.location.protocol + '//' + window.location.hostname);
     alert(`📷 摄像头无法启动\n\n原因：当前浏览器不支持摄像头API\n解决方法：\n1. 👉 使用【从相册选择图片】（推荐，此功能可用）\n2. 或更换现代浏览器\n\n从相册选择同样可以识别条形码和文字！`);
     isStarting.value = false;
     return;
@@ -130,34 +108,28 @@ const startCamera = async () => {
     };
 
     streamRef.value = await mediaDevices.getUserMedia(constraints);
-    console.log('获取到摄像头流');
 
     phase.value = 'camera';
-    console.log('已切换到摄像头模式');
 
     if (videoRef.value && streamRef.value) {
       videoRef.value.srcObject = streamRef.value;
       await new Promise<void>((resolve) => {
         if (videoRef.value) {
           videoRef.value.onloadedmetadata = () => {
-            console.log('视频元数据:', videoRef.value?.videoWidth, 'x', videoRef.value?.videoHeight);
             videoRef.value?.play().catch(() => {});
             // 再等待更长时间确保videoWidth和videoHeight可用
             setTimeout(() => {
-              console.log('等待后视频尺寸:', videoRef.value?.videoWidth, 'x', videoRef.value?.videoHeight);
               resolve();
             }, 1000);
           };
           // 超时保护
           setTimeout(() => {
-            console.log('超时，继续执行');
             resolve();
           }, 3000);
         }
       });
     }
   } catch (err: any) {
-    console.error('摄像头错误:', err);
     alert(`无法启动摄像头: ${err.message}`);
   } finally {
     isStarting.value = false;
@@ -173,7 +145,6 @@ const stopCamera = () => {
 
 // 完全按测试页面的方式实现capture()
 const capture = async () => {
-  console.log('=== 开始拍照 ===');
   if (!videoRef.value || !canvasRef.value) {
     alert('摄像头未准备好');
     return;
@@ -185,13 +156,11 @@ const capture = async () => {
   let waitCount = 0;
   const maxWait = 30; // 30 * 100ms = 3秒
   while (!video.videoWidth && waitCount < maxWait) {
-    console.log('等待videoWidth加载，已等:', waitCount * 100, 'ms');
     await new Promise(resolve => setTimeout(resolve, 100));
     waitCount++;
   }
 
   if (!video.videoWidth) {
-    console.log('video.videoWidth 为0，视频未就绪');
     alert('摄像头还未完全就绪，请稍等1-2秒再试');
     return;
   }
@@ -207,29 +176,20 @@ const capture = async () => {
       return;
     }
 
-    console.log('videoWidth:', video.videoWidth);
-    console.log('videoHeight:', video.videoHeight);
-
     // 直接使用测试页面的方式，设置画布和视频尺寸相同
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
 
-    console.log('画布尺寸:', canvas.width, canvas.height);
-
     // 最简单的绘制方法（测试页面的工作方式！）
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    console.log('直接绘制成功');
 
     // 生成照片数据
     photoData.value = canvas.toDataURL('image/jpeg', 0.8);
-    console.log('照片数据生成:', photoData.value.length, '字符');
 
     // 切换到预览
     phase.value = 'preview';
-    console.log('切换到预览阶段');
     stopCamera();
   } catch (err) {
-    console.error('拍照错误:', err);
     alert('拍照失败');
   } finally {
     isCapturing.value = false;
@@ -257,7 +217,6 @@ const cancel = () => {
 const openTestPage = () => {
   // 检查是否可以使用摄像头
   if (!canUseCamera()) {
-    console.warn('摄像头不可用:', window.location.protocol + '//' + window.location.hostname);
     alert(`📷 摄像头无法启动\n\n原因：当前浏览器不支持摄像头API\n解决方法：\n1. 👉 使用【从相册选择图片】（推荐，此功能可用）\n2. 或更换现代浏览器\n\n从相册选择同样可以识别条形码和文字！`);
     return;
   }
@@ -269,7 +228,6 @@ const openTestPage = () => {
   const handleMessage = (event: MessageEvent) => {
     // 检查消息类型
     if (event.data && event.data.type === 'photo-taken') {
-      console.log('收到测试页面的照片数据');
       photoData.value = event.data.data;
       phase.value = 'preview';
       stopCamera();
@@ -324,14 +282,6 @@ const handleFileSelect = (e: Event) => {
   overflow: hidden;
 }
 
-.debug-bar {
-  background: #333;
-  color: #fff;
-  padding: 8px 12px;
-  font-size: 12px;
-  font-family: monospace;
-}
-
 .camera-main {
   position: relative;
   min-height: 400px;
@@ -347,19 +297,6 @@ const handleFileSelect = (e: Event) => {
   position: absolute;
   top: -9999px;
   left: -9999px;
-}
-
-.debug-info {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  background: rgba(0, 0, 0, 0.8);
-  color: #0f0;
-  padding: 8px;
-  font-size: 11px;
-  font-family: monospace;
-  z-index: 100;
 }
 
 /* 空闲界面 */

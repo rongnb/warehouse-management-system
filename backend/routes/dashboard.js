@@ -89,32 +89,34 @@ router.get('/stats', auth, asyncHandler(async (req, res) => {
 
 // 获取低库存预警
 router.get('/low-stock', auth, asyncHandler(async (req, res) => {
-  const products = await Product.findAll({
-    where: { status: true },
-    attributes: ['id', 'name', 'sku', 'minStock'],
+  // Single query using aggregation instead of N+1
+  const inventorySums = await Inventory.findAll({
+    attributes: [
+      'productId',
+      [fn('SUM', col('quantity')), 'totalStock'],
+    ],
+    group: ['productId'],
+    raw: true,
   });
 
-  const lowStockItems = [];
+  const productIds = inventorySums.map(i => i.productId);
+  const products = await Product.findAll({
+    where: { id: { [Op.in]: productIds }, status: true },
+    attributes: ['id', 'name', 'sku', 'minStock'],
+    raw: true,
+  });
 
-  for (const product of products) {
-    const inventoryRecords = await Inventory.findAll({
-      where: { productId: product.id },
-      attributes: ['quantity'],
-      raw: true,
-    });
+  const stockMap = new Map(inventorySums.map(i => [i.productId, parseInt(i.totalStock) || 0]));
 
-    const totalStock = inventoryRecords.reduce((sum, item) => sum + item.quantity, 0);
-
-    if (totalStock <= product.minStock) {
-      lowStockItems.push({
-        id: product.id,
-        name: product.name,
-        sku: product.sku,
-        minStock: product.minStock,
-        quantity: totalStock,
-      });
-    }
-  }
+  const lowStockItems = products
+    .filter(p => (stockMap.get(p.id) || 0) <= p.minStock)
+    .map(p => ({
+      id: p.id,
+      name: p.name,
+      sku: p.sku,
+      minStock: p.minStock,
+      quantity: stockMap.get(p.id) || 0,
+    }));
 
   // 只返回前10条预警
   res.json({ products: lowStockItems.slice(0, 10) });
@@ -136,7 +138,7 @@ router.get('/recent-transactions', auth, asyncHandler(async (req, res) => {
   const formatted = transactions.map(t => {
     const tObj = t.toJSON();
     return {
-      id: tObj._id,
+      id: tObj.id,
       transactionNo: tObj.transactionNo,
       productName: tObj.product?.name || '未知商品',
       type: tObj.type,
@@ -238,24 +240,45 @@ router.get('/recent-outbound', auth, asyncHandler(async (req, res) => {
     raw: true,
   });
 
+  if (topProducts.length === 0) {
+    return res.json({ products: [] });
+  }
+
+  // Batch load all products in one query
+  const productIds = topProducts.map(p => p.productId);
+  const productList = await Product.findAll({
+    where: { id: { [Op.in]: productIds } },
+    attributes: ['id', 'name', 'sku'],
+    raw: true,
+  });
+  const productMap = new Map(productList.map(p => [p.id, p]));
+
+  // Batch load recent transactions for all products in one query
+  const allRecentTransactions = await Transaction.findAll({
+    where: { productId: { [Op.in]: productIds }, type: 'out', status: 'completed' },
+    order: [['createdAt', 'DESC']],
+    attributes: ['productId', 'quantity', 'consumptionUnit', 'consumptionDate', 'createdAt'],
+    raw: true,
+  });
+
+  // Group transactions by productId and take top 3 each
+  const transactionsByProduct = new Map();
+  for (const t of allRecentTransactions) {
+    if (!transactionsByProduct.has(t.productId)) {
+      transactionsByProduct.set(t.productId, []);
+    }
+    const list = transactionsByProduct.get(t.productId);
+    if (list.length < 3) {
+      list.push(t);
+    }
+  }
+
   const products = [];
-
   for (const item of topProducts) {
-    const product = await Product.findByPk(item.productId, {
-      attributes: ['id', 'name', 'sku'],
-    });
-
+    const product = productMap.get(item.productId);
     if (!product) continue;
 
-    // Get recent 3 outbound transactions for this product
-    const recentTransactions = await Transaction.findAll({
-      where: { productId: item.productId, type: 'out', status: 'completed' },
-      order: [['createdAt', 'DESC']],
-      limit: 3,
-      attributes: ['quantity', 'consumptionUnit', 'consumptionDate', 'createdAt'],
-      raw: true,
-    });
-
+    const recentTransactions = transactionsByProduct.get(item.productId) || [];
     const recentOutbound = recentTransactions.map(t => ({
       quantity: t.quantity,
       consumptionUnit: t.consumptionUnit || '',

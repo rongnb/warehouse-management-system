@@ -30,15 +30,8 @@ request.interceptors.response.use(
     return response
   },
   (error) => {
-    console.error('请求错误详情:', error)
-
     if (error.response) {
       const { status, data, config } = error.response
-
-      console.error('响应状态:', status)
-      console.error('响应数据:', data)
-      console.error('请求URL:', config.url)
-      console.error('请求参数:', config.params || config.data)
 
       switch (status) {
         case 401:

@@ -42,6 +42,15 @@ export const dashboardApi = {
       method: 'get',
     })
   },
+
+  // 获取商品最近出库记录
+  getRecentOutbound: (params?: { limit?: number }) => {
+    return request({
+      url: '/dashboard/recent-outbound',
+      method: 'get',
+      params,
+    })
+  },
 }
 
 export default dashboardApi

@@ -48,7 +48,19 @@ router.get('/', auth, asyncHandler(async (req, res) => {
 
   // Low stock filter using SQL literal
   if (lowStock === 'true') {
-    where[Op.and] = sequelize.literal('quantity < (SELECT minStock FROM products WHERE products.id = Inventory.productId)');
+    where[Op.and] = sequelize.literal('`Inventory`.`quantity` < (SELECT `minStock` FROM `products` WHERE `products`.`id` = `Inventory`.`productId`)');
+  }
+
+  // Status filter: 1=normal, 2=low stock, 3=overstock
+  if (status === '2') {
+    where[Op.and] = sequelize.literal('`Inventory`.`quantity` <= (SELECT `minStock` FROM `products` WHERE `products`.`id` = `Inventory`.`productId`)');
+  } else if (status === '3') {
+    where[Op.and] = sequelize.literal('`Inventory`.`quantity` >= (SELECT `maxStock` FROM `products` WHERE `products`.`id` = `Inventory`.`productId`)');
+  } else if (status === '1') {
+    where[Op.and] = sequelize.literal(
+      '`Inventory`.`quantity` > (SELECT `minStock` FROM `products` WHERE `products`.`id` = `Inventory`.`productId`) ' +
+      'AND `Inventory`.`quantity` < (SELECT `maxStock` FROM `products` WHERE `products`.`id` = `Inventory`.`productId`)'
+    );
   }
 
   const offset = (page - 1) * limit;
@@ -64,35 +76,16 @@ router.get('/', auth, asyncHandler(async (req, res) => {
     offset,
   });
 
-  // Apply status filter in-memory if needed
-  let filteredInventory = inventory;
-  if (status) {
-    filteredInventory = inventory.filter(item => {
-      const qty = item.quantity;
-      const min = item.product?.minStock || 0;
-      const max = item.product?.maxStock || 99999;
-
-      if (status === '1') {
-        return qty > min && qty < max;
-      } else if (status === '2') {
-        return qty <= min;
-      } else if (status === '3') {
-        return qty >= max;
-      }
-      return true;
-    });
-  }
-
-  const formattedInventory = filteredInventory.map(item => {
+  const formattedInventory = inventory.map(item => {
     const itemObj = item.toJSON();
     return {
-      id: itemObj._id,
-      _id: itemObj._id,
+      id: itemObj.id,
+      _id: itemObj.id,
       sku: itemObj.product?.sku || '',
       productName: itemObj.product?.name || '',
-      productId: itemObj.product?._id,
+      productId: itemObj.product?.id,
       warehouseName: itemObj.warehouse?.name || '',
-      warehouseId: itemObj.warehouse?._id,
+      warehouseId: itemObj.warehouse?.id,
       quantity: itemObj.quantity,
       minStock: itemObj.product?.minStock || 0,
       maxStock: itemObj.product?.maxStock || 0,
@@ -108,8 +101,8 @@ router.get('/', auth, asyncHandler(async (req, res) => {
     pagination: {
       page: parseInt(page),
       limit: parseInt(limit),
-      total: status ? filteredInventory.length : total,
-      pages: Math.ceil((status ? filteredInventory.length : total) / limit),
+      total,
+      pages: Math.ceil(total / limit),
     },
   });
 }));
@@ -157,26 +150,45 @@ router.post('/:id/adjust', auth, requireRole(['admin', 'manager']), asyncHandler
     throw new BadRequestError('参数不完整');
   }
 
-  const inventory = await Inventory.findByPk(id, {
-    include: [
-      { model: Product, as: 'product', attributes: ['name', 'sku', 'unit'], required: false },
-      { model: Warehouse, as: 'warehouse', attributes: ['name'], required: false },
-    ],
+  const inventory = await sequelize.transaction(async (t) => {
+    const inv = await Inventory.findByPk(id, { transaction: t });
+
+    if (!inv) {
+      throw new NotFoundError('库存记录不存在');
+    }
+
+    if (inv.quantity + quantity < 0) {
+      throw new BadRequestError('库存不足，无法执行该调整');
+    }
+
+    inv.quantity += quantity;
+    inv.updatedBy = req.user.id;
+    inv.lastUpdated = new Date();
+    await inv.save({ transaction: t });
+
+    if (quantity !== 0) {
+      await Transaction.create({
+        type: quantity > 0 ? 'in' : 'out',
+        productId: inv.productId,
+        warehouseId: inv.warehouseId,
+        quantity: Math.abs(quantity),
+        remark: `库存调整${remark ? ': ' + remark : ''}`,
+        createdBy: req.user.id,
+        operator: req.user.id,
+        status: 'completed',
+      }, { transaction: t });
+    }
+
+    await inv.reload({
+      include: [
+        { model: Product, as: 'product', attributes: ['name', 'sku', 'unit'], required: false },
+        { model: Warehouse, as: 'warehouse', attributes: ['name'], required: false },
+      ],
+      transaction: t,
+    });
+
+    return inv;
   });
-
-  if (!inventory) {
-    throw new NotFoundError('库存记录不存在');
-  }
-
-  // Check if adjustment would result in negative quantity
-  if (inventory.quantity + quantity < 0) {
-    throw new BadRequestError('库存不足，无法执行该调整');
-  }
-
-  inventory.quantity += quantity;
-  inventory.updatedBy = req.user.id;
-  inventory.lastUpdated = new Date();
-  await inventory.save();
 
   res.json({
     message: '库存调整成功',
@@ -192,36 +204,54 @@ router.post('/adjust', auth, requireRole(['admin', 'manager']), asyncHandler(asy
     throw new BadRequestError('参数不完整');
   }
 
-  // Find existing inventory record
-  let inventory = await Inventory.findOne({
-    where: { productId: product, warehouseId: warehouse },
-  });
-
-  if (inventory) {
-    if (inventory.quantity + quantity < 0) {
-      throw new BadRequestError('库存不足，无法执行该调整');
-    }
-    inventory.quantity += quantity;
-    inventory.updatedBy = req.user.id;
-    inventory.lastUpdated = new Date();
-    await inventory.save();
-  } else {
-    if (quantity <= 0) {
-      throw new BadRequestError('该商品在指定仓库没有库存记录，无法执行出库操作');
-    }
-    inventory = await Inventory.create({
-      productId: product,
-      warehouseId: warehouse,
-      quantity,
-      updatedBy: req.user.id,
+  const inventory = await sequelize.transaction(async (t) => {
+    let inv = await Inventory.findOne({
+      where: { productId: product, warehouseId: warehouse },
+      transaction: t,
     });
-  }
 
-  await inventory.reload({
-    include: [
-      { model: Product, as: 'product', attributes: ['name', 'sku', 'unit'], required: false },
-      { model: Warehouse, as: 'warehouse', attributes: ['name'], required: false },
-    ],
+    if (inv) {
+      if (inv.quantity + quantity < 0) {
+        throw new BadRequestError('库存不足，无法执行该调整');
+      }
+      inv.quantity += quantity;
+      inv.updatedBy = req.user.id;
+      inv.lastUpdated = new Date();
+      await inv.save({ transaction: t });
+    } else {
+      if (quantity <= 0) {
+        throw new BadRequestError('该商品在指定仓库没有库存记录，无法执行出库操作');
+      }
+      inv = await Inventory.create({
+        productId: product,
+        warehouseId: warehouse,
+        quantity,
+        updatedBy: req.user.id,
+      }, { transaction: t });
+    }
+
+    if (quantity !== 0) {
+      await Transaction.create({
+        type: quantity > 0 ? 'in' : 'out',
+        productId: product,
+        warehouseId: warehouse,
+        quantity: Math.abs(quantity),
+        remark: `库存调整${remark ? ': ' + remark : ''}`,
+        createdBy: req.user.id,
+        operator: req.user.id,
+        status: 'completed',
+      }, { transaction: t });
+    }
+
+    await inv.reload({
+      include: [
+        { model: Product, as: 'product', attributes: ['name', 'sku', 'unit'], required: false },
+        { model: Warehouse, as: 'warehouse', attributes: ['name'], required: false },
+      ],
+      transaction: t,
+    });
+
+    return inv;
   });
 
   res.json({
@@ -318,15 +348,28 @@ router.post('/transfer', auth, requireRole(['admin', 'manager']), asyncHandler(a
       }, { transaction: t });
     }
 
-    // Create transaction record (using toWarehouse as warehouseId, fromWarehouse in remark)
-    const transactionRecord = await Transaction.create({
-      type: 'transfer',
+    // Create out transaction from source warehouse
+    const outTransaction = await Transaction.create({
+      type: 'out',
+      productId: product,
+      warehouseId: fromWarehouse,
+      quantity,
+      remark: `库存转移至仓库ID ${toWarehouse}${remark ? ': ' + remark : ''}`,
+      createdBy: req.user.id,
+      operator: req.user.id,
+      status: 'completed',
+    }, { transaction: t });
+
+    // Create in transaction to destination warehouse
+    const inTransaction = await Transaction.create({
+      type: 'in',
       productId: product,
       warehouseId: toWarehouse,
       quantity,
-      remark: `从仓库ID ${fromWarehouse} 转移${remark ? ': ' + remark : ''}`,
+      remark: `从仓库ID ${fromWarehouse} 转入${remark ? ': ' + remark : ''}`,
       createdBy: req.user.id,
       operator: req.user.id,
+      status: 'completed',
     }, { transaction: t });
 
     await sourceInventory.reload({
@@ -349,40 +392,41 @@ router.post('/transfer', auth, requireRole(['admin', 'manager']), asyncHandler(a
       message: '库存转移成功',
       sourceInventory,
       targetInventory,
-      transaction: transactionRecord,
+      transactions: { out: outTransaction, in: inTransaction },
     });
   });
 }));
 
 // 获取低库存预警
 router.get('/low-stock', auth, asyncHandler(async (req, res) => {
-  // Get all active products
-  const products = await Product.findAll({
-    where: { status: true },
-    attributes: ['id', 'name', 'sku', 'minStock'],
+  // Single query using aggregation instead of N+1
+  const inventorySums = await Inventory.findAll({
+    attributes: [
+      'productId',
+      [Sequelize.fn('SUM', Sequelize.col('quantity')), 'totalStock'],
+    ],
+    group: ['productId'],
+    raw: true,
   });
 
-  const lowStockItems = [];
+  const productIds = inventorySums.map(i => i.productId);
+  const products = await Product.findAll({
+    where: { id: { [Op.in]: productIds }, status: true },
+    attributes: ['id', 'name', 'sku', 'minStock'],
+    raw: true,
+  });
 
-  for (const product of products) {
-    const inventoryRecords = await Inventory.findAll({
-      where: { productId: product.id },
-      attributes: ['quantity'],
-      raw: true,
-    });
+  const stockMap = new Map(inventorySums.map(i => [i.productId, parseInt(i.totalStock) || 0]));
 
-    const totalStock = inventoryRecords.reduce((sum, item) => sum + item.quantity, 0);
-
-    if (totalStock <= product.minStock) {
-      lowStockItems.push({
-        product: product.id,
-        name: product.name,
-        sku: product.sku,
-        minStock: product.minStock,
-        currentStock: totalStock,
-      });
-    }
-  }
+  const lowStockItems = products
+    .filter(p => (stockMap.get(p.id) || 0) <= p.minStock)
+    .map(p => ({
+      product: p.id,
+      name: p.name,
+      sku: p.sku,
+      minStock: p.minStock,
+      currentStock: stockMap.get(p.id) || 0,
+    }));
 
   res.json({ products: lowStockItems });
 }));
